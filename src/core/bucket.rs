@@ -1,0 +1,108 @@
+use super::slot::{Item, Slot};
+
+#[derive(Debug)]
+pub(crate) struct Bucket {
+    slots: Vec<Slot>,
+    pos: usize,
+    level: u32,
+    step_size_in_bits: u32,
+    pub(crate) capacity: u64,
+    low_level_capacity: u64,
+
+    tick_times: u64,
+    next: Option<Box<Bucket>>,
+}
+
+impl Bucket {
+    pub fn new(slot_count: u64, level: u32, next: Option<Box<Bucket>>) -> Self {
+        let capacity = slot_count.pow(level);
+        let mut low_level_capacity: u64 = 0;
+        for i in 1..level {
+            low_level_capacity += slot_count.pow(i);
+        }
+
+        let step_size_in_bits = (slot_count as f64).log2() as u32 * (level - 1);
+
+        println!(
+            "level:{},capacity:{},step_size_in_bits:{}",
+            level, capacity, step_size_in_bits
+        );
+
+        let mut slots = vec![];
+        for _ in 0..slot_count {
+            slots.push(Slot::new());
+        }
+
+        Bucket {
+            slots,
+            next,
+            pos: 0,
+            level,
+            step_size_in_bits,
+            capacity,
+            tick_times: 0,
+            low_level_capacity,
+        }
+    }
+
+    pub fn add(&mut self, item: Item, tick_times: u64) -> Result<(), String> {
+        if tick_times > self.capacity {
+            // over this bucket capacity, try to add next level bucket
+            return match self.next.as_mut() {
+                Some(bucket) => bucket.add(item, tick_times - self.capacity),
+                None => Err(String::from("Out of range")),
+            };
+        }
+
+        let slot_index = ((tick_times - 1) >> self.step_size_in_bits) as usize;
+        let slot_index = (slot_index + self.pos) % self.slots.len();
+
+        // println!(
+        //     " level:{}, index: {},  tick_times:{}, capacity:{},self.step_size_in_bits:{}",
+        //     self.level, slot_index, tick_times, self.capacity, self.step_size_in_bits
+        // );
+
+        self.slots[slot_index].push(item);
+
+        Ok(())
+    }
+
+    pub fn tick(&mut self) -> Option<Vec<Item>> {
+        let position = self.pos;
+        let result = self.slots[position].items.take();
+        self.pos += 1;
+        self.tick_times += 1;
+
+        if self.pos == self.slots.len() {
+            // reach the max length, reposition the pointer
+            self.pos = 0;
+            self.relocate_next_bucket();
+        }
+
+        result
+    }
+
+    fn relocate_next_bucket(&mut self) {
+        if self.next.is_none() {
+            return;
+        }
+
+        let bucket = self.next.as_mut().unwrap();
+        let total_tick_time = self.tick_times << self.step_size_in_bits;
+        let upper_result = bucket.tick();
+        for item in upper_result.unwrap_or_default() {
+            let tick_times = item.at_tick_times - total_tick_time - self.low_level_capacity;
+            let _ = self.add(item, tick_times);
+        }
+    }
+}
+
+mod test {
+    #[test]
+    fn test() {
+        for level in 1..6 {
+            let bucket = super::Bucket::new(2, level, None);
+            println!("{}, bucket: {:?}", level, bucket);
+        }
+    }
+}
