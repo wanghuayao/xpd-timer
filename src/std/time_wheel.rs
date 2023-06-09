@@ -11,14 +11,14 @@ use std::time::{Duration, Instant, SystemTime};
 
 use crate::core::{SlotSize, Wheel};
 
-pub struct Scheduler {
+pub struct Scheduler<T> {
     // duration between tow tick(in milliseconds)
     milli_interval: u128,
-    wheel: Arc<Mutex<Wheel>>,
+    wheel: Arc<Mutex<Wheel<T>>>,
 }
 
-impl Scheduler {
-    pub fn schedule_at(&self, content: String, when: SystemTime) -> Result<(), String> {
+impl<T> Scheduler<T> {
+    pub fn schedule_at(&self, content: T, when: SystemTime) -> Result<(), String> {
         let after = when.duration_since(SystemTime::now());
         if after.is_err() {
             return Err("can't asign a past time".to_string());
@@ -26,7 +26,7 @@ impl Scheduler {
 
         self.schedule(content, after.unwrap())
     }
-    pub fn schedule(&self, content: String, after: Duration) -> Result<(), String> {
+    pub fn schedule(&self, content: T, after: Duration) -> Result<(), String> {
         let tick_times = after.as_millis() / self.milli_interval;
         let mut wheel = self.wheel.lock().unwrap();
         wheel.borrow_mut().schedule(content, tick_times)
@@ -52,8 +52,8 @@ impl<T> TickReceiver<T> {
     }
 }
 
-pub fn create_time_wheel<T>(interval: Duration) -> (Scheduler, TickReceiver<String>) {
-    let (sender, receiver) = channel::<String>();
+pub fn create_time_wheel<T: Send + 'static>(interval: Duration) -> (Scheduler<T>, TickReceiver<T>) {
+    let (sender, receiver) = channel::<T>();
 
     let wheel = Arc::new(Mutex::new(Wheel::new(SlotSize::Normal)));
 
@@ -101,8 +101,6 @@ pub fn create_time_wheel<T>(interval: Duration) -> (Scheduler, TickReceiver<Stri
 mod tests {
     use rand::Rng;
 
-    use super::*;
-
     #[test]
     fn it_works() {
         use crate::std::create_time_wheel;
@@ -147,7 +145,7 @@ mod tests {
                 now - expect_time
             } as u64;
 
-            if expect_time > now {
+            if distance > 0 {
                 println!(
                     "{}, exp : {}, now:{},distance:{}",
                     count, expect_time, now, distance

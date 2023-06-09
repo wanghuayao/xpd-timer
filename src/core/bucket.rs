@@ -1,21 +1,21 @@
-use super::slot::{Item, Slot};
+use super::slot::{Content, Slot};
 
 #[derive(Debug)]
-pub(crate) struct Bucket {
-    slots: Vec<Slot>,
+pub(crate) struct Bucket<T> {
+    slots: Vec<Slot<T>>,
     pos: usize,
     step_size_in_bits: u32,
     pub(crate) capacity: u64,
     low_level_capacity: u64,
 
     tick_times: u64,
-    next: Option<Box<Bucket>>,
+    next: Option<Box<Bucket<T>>>,
 
     _level: u32,
 }
 
-impl Bucket {
-    pub fn new(slot_count: u64, level: u32, next: Option<Box<Bucket>>) -> Self {
+impl<T> Bucket<T> {
+    pub fn new(slot_count: u64, level: u32, next: Option<Box<Bucket<T>>>) -> Self {
         let capacity = slot_count.pow(level);
         let mut low_level_capacity: u64 = 0;
         for i in 1..level {
@@ -47,7 +47,11 @@ impl Bucket {
         }
     }
 
-    pub fn add(&mut self, item: Item, tick_times: u64) -> Result<(), String> {
+    pub fn add(&mut self, item: Content<T>, tick_times: u64) -> Result<(), String> {
+        if tick_times < 1 {
+            return Err(String::from("tick times is not allow zero"));
+        }
+
         if tick_times > self.capacity {
             // over this bucket capacity, try to add next level bucket
             return match self.next.as_mut() {
@@ -56,6 +60,7 @@ impl Bucket {
             };
         }
 
+        // TODO: there will be panic, tick_times小于1了
         let slot_index = ((tick_times - 1) >> self.step_size_in_bits) as usize;
         let slot_index = (slot_index + self.pos) % self.slots.len();
 
@@ -69,7 +74,7 @@ impl Bucket {
         Ok(())
     }
 
-    pub fn tick(&mut self) -> Option<Vec<Item>> {
+    pub fn tick(&mut self) -> Option<Vec<Content<T>>> {
         let position = self.pos;
         let result = self.slots[position].items.take();
         self.pos += 1;
@@ -103,7 +108,7 @@ mod test {
     #[test]
     fn test() {
         for level in 1..6 {
-            let bucket = super::Bucket::new(2, level, None);
+            let bucket = super::Bucket::<String>::new(2, level, None);
             println!("{}, bucket: {:?}", level, bucket);
         }
     }

@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::{bucket::Bucket, slot::Item};
+use super::{bucket::Bucket, slot::Content};
 
 const LEVEL_COUNT: u32 = 6;
 
@@ -16,20 +16,20 @@ pub enum SlotSize {
 }
 
 #[derive(Debug)]
-pub struct Wheel {
-    bucket: Bucket,
+pub struct Wheel<T> {
+    bucket: Bucket<T>,
     _slot_count: u64,
     pub(crate) tick_times: u64,
     capacity: u64,
 }
 
-impl Default for Wheel {
+impl<T> Default for Wheel<T> {
     fn default() -> Self {
         Wheel::new(SlotSize::Normal)
     }
 }
 
-impl Wheel {
+impl<T> Wheel<T> {
     pub(crate) fn new(slot_count: SlotSize) -> Self {
         let slot_count = match slot_count {
             SlotSize::Mini => 4u64,
@@ -56,14 +56,14 @@ impl Wheel {
     }
 
     // let five_seconds = Duration::new(5, 0);
-    pub(crate) fn schedule(&mut self, content: String, tick_times: u128) -> Result<(), String> {
+    pub(crate) fn schedule(&mut self, content: T, tick_times: u128) -> Result<(), String> {
         if tick_times > self.capacity as u128 {
             return Result::Err(String::from("Out of range"));
         }
 
         let tick_times = tick_times as u64;
 
-        let item = Item {
+        let item = Content {
             data: content,
             at_tick_times: self.tick_times + tick_times,
         };
@@ -71,7 +71,7 @@ impl Wheel {
         self.bucket.add(item, tick_times as u64)
     }
 
-    pub(crate) fn tick(&mut self) -> Option<Vec<Item>> {
+    pub(crate) fn tick(&mut self) -> Option<Vec<Content<T>>> {
         self.tick_times += 1;
         self.bucket.tick()
     }
@@ -90,14 +90,14 @@ mod tests {
     #[test]
     fn new_test() {
         use super::*;
-        let wheel: Wheel = Wheel::new(SlotSize::Mini);
+        let wheel = Wheel::<String>::new(SlotSize::Mini);
         println!("{:?}", wheel);
     }
 
     #[test]
     fn new_test1() {
         use super::*;
-        let mut wheel: Wheel = Wheel::new(SlotSize::Mini);
+        let mut wheel = Wheel::<String>::new(SlotSize::Mini);
         for millis in 1..100 {
             print!("ms: {}\t", millis);
             let result = wheel.schedule("".to_string(), millis);
@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn new_test_all1() {
         use super::*;
-        let mut wheel: Wheel = Wheel::new(SlotSize::Mini);
+        let mut wheel = Wheel::<String>::new(SlotSize::Mini);
         let result = wheel.schedule("242".to_string(), 242);
         assert!(result.is_ok());
         for i in 1..300 {
@@ -125,7 +125,7 @@ mod tests {
 
         const MAX_SIZE: u64 = 500;
 
-        let mut wheel: Wheel = Wheel::new(SlotSize::Mini);
+        let mut wheel = Wheel::<String>::new(SlotSize::Mini);
 
         const ITEM_COUNT: u64 = 200;
         for _ in 0..ITEM_COUNT {
