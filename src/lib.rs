@@ -1,9 +1,11 @@
-pub mod core;
-pub mod std;
+mod core;
+mod std;
+
+pub use crate::core::SlotSize;
+pub use crate::std::*;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn it_works() {

@@ -1,7 +1,6 @@
 #[derive(Debug)]
 pub struct Item {
     pub data: String,
-    // pub when: u128,
     pub(crate) at_tick_times: u64,
 }
 
@@ -20,5 +19,18 @@ impl Slot {
         }
 
         self.items.as_mut().unwrap().push(item);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn size_of_item() {
+        use super::Item;
+
+        use std::mem::{align_of, size_of};
+
+        assert_eq!(size_of::<Item>(), 32);
+        assert_eq!(align_of::<Item>(), 8);
     }
 }

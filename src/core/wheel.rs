@@ -18,7 +18,7 @@ pub enum SlotSize {
 #[derive(Debug)]
 pub struct Wheel {
     bucket: Bucket,
-    slot_count: u64,
+    _slot_count: u64,
     pub(crate) tick_times: u64,
     capacity: u64,
 }
@@ -49,7 +49,7 @@ impl Wheel {
 
         Wheel {
             bucket: *bucket.unwrap(),
-            slot_count,
+            _slot_count: slot_count,
             tick_times: 0,
             capacity,
         }
@@ -77,7 +77,7 @@ impl Wheel {
     }
 }
 
-fn current_millis() -> u128 {
+fn _current_millis() -> u128 {
     let start = SystemTime::now();
     let since_the_epoch = start
         .duration_since(UNIX_EPOCH)

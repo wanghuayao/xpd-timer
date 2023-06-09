@@ -4,13 +4,14 @@ use super::slot::{Item, Slot};
 pub(crate) struct Bucket {
     slots: Vec<Slot>,
     pos: usize,
-    level: u32,
     step_size_in_bits: u32,
     pub(crate) capacity: u64,
     low_level_capacity: u64,
 
     tick_times: u64,
     next: Option<Box<Bucket>>,
+
+    _level: u32,
 }
 
 impl Bucket {
@@ -37,11 +38,12 @@ impl Bucket {
             slots,
             next,
             pos: 0,
-            level,
             step_size_in_bits,
             capacity,
             tick_times: 0,
             low_level_capacity,
+
+            _level: level,
         }
     }
 

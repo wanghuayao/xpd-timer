@@ -2,14 +2,14 @@ use std::thread;
 use std::{
     borrow::BorrowMut,
     sync::{
-        mpsc::{channel, Receiver, RecvError, Sender},
+        mpsc::{channel, Receiver},
         Arc, Mutex,
     },
 };
 
 use std::time::{Duration, Instant, SystemTime};
 
-use crate::core::{Item, SlotSize, Wheel};
+use crate::core::{SlotSize, Wheel};
 
 pub struct Scheduler {
     // duration between tow tick(in milliseconds)

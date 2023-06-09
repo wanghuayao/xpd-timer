@@ -4,5 +4,5 @@ mod bucket;
 mod slot;
 mod wheel;
 
-pub(crate) use slot::Item;
-pub(crate) use wheel::{SlotSize, Wheel};
+pub use wheel::SlotSize;
+pub(crate) use wheel::Wheel;
