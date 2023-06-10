@@ -1,6 +1,8 @@
+mod basic;
 mod core;
 mod std;
 
+pub use crate::basic::*;
 pub use crate::core::SlotSize;
 pub use crate::std::*;
 

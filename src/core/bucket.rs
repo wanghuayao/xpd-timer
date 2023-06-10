@@ -1,4 +1,8 @@
+use crate::TimerResult;
+
 use super::slot::{Content, Slot};
+
+use crate::TimerError::{InternalError, OutOfRangeError};
 
 #[derive(Debug)]
 pub(crate) struct Bucket<T> {
@@ -47,16 +51,16 @@ impl<T> Bucket<T> {
         }
     }
 
-    pub fn add(&mut self, item: Content<T>, tick_times: u64) -> Result<(), String> {
+    pub fn add(&mut self, item: Content<T>, tick_times: u64) -> TimerResult<()> {
         if tick_times < 1 {
-            return Err(String::from("tick times is not allow zero"));
+            return Err(InternalError(String::from("tick times is not allow zero")));
         }
 
         if tick_times > self.capacity {
             // over this bucket capacity, try to add next level bucket
             return match self.next.as_mut() {
                 Some(bucket) => bucket.add(item, tick_times - self.capacity),
-                None => Err(String::from("Out of range")),
+                None => Err(OutOfRangeError),
             };
         }
 

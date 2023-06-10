@@ -10,6 +10,7 @@ use std::{
 use std::time::{Duration, Instant, SystemTime};
 
 use crate::core::{SlotSize, Wheel};
+use crate::{TimerError, TimerResult};
 
 pub struct Scheduler<T> {
     // duration between tow tick(in milliseconds)
@@ -18,15 +19,15 @@ pub struct Scheduler<T> {
 }
 
 impl<T> Scheduler<T> {
-    pub fn schedule_at(&self, content: T, when: SystemTime) -> Result<(), String> {
+    pub fn schedule_at(&self, content: T, when: SystemTime) -> TimerResult<()> {
         let after = when.duration_since(SystemTime::now());
         if after.is_err() {
-            return Err("can't asign a past time".to_string());
+            // TODO: timeout right now;
         }
 
         self.schedule(content, after.unwrap())
     }
-    pub fn schedule(&self, content: T, after: Duration) -> Result<(), String> {
+    pub fn schedule(&self, content: T, after: Duration) -> TimerResult<()> {
         let tick_times = after.as_millis() / self.milli_interval;
         let mut wheel = self.wheel.lock().unwrap();
         wheel.borrow_mut().schedule(content, tick_times)
@@ -36,18 +37,18 @@ impl<T> Scheduler<T> {
 pub struct TickReceiver<T>(Receiver<T>);
 
 impl<T> TickReceiver<T> {
-    pub fn recv(&self) -> Result<T, String> {
+    pub fn recv(&self) -> TimerResult<T> {
         match self.0.recv() {
             Ok(result) => Ok(result),
-            Err(err) => Err(err.to_string()),
+            Err(err) => Err(TimerError::RecvieError(err)),
         }
     }
 
     // TODO
-    pub fn stop(&self) -> Result<T, String> {
+    pub fn stop(&self) -> TimerResult<T> {
         match self.0.recv() {
             Ok(result) => Ok(result),
-            Err(err) => Err(err.to_string()),
+            Err(err) => Err(TimerError::RecvieError(err)),
         }
     }
 }

@@ -1,5 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::{TimerError, TimerResult};
+
 use super::{bucket::Bucket, slot::Content};
 
 const LEVEL_COUNT: u32 = 6;
@@ -56,9 +58,9 @@ impl<T> Wheel<T> {
     }
 
     // let five_seconds = Duration::new(5, 0);
-    pub(crate) fn schedule(&mut self, content: T, tick_times: u128) -> Result<(), String> {
+    pub(crate) fn schedule(&mut self, content: T, tick_times: u128) -> TimerResult<()> {
         if tick_times > self.capacity as u128 {
-            return Result::Err(String::from("Out of range"));
+            return Result::Err(TimerError::OutOfRangeError);
         }
 
         let tick_times = tick_times as u64;

@@ -3,7 +3,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use xpd_timer::create_time_wheel;
+use xpd_timer::{create_time_wheel, TimerResult};
 
 #[derive(Debug)]
 struct Item {
@@ -11,7 +11,7 @@ struct Item {
     when: SystemTime,
 }
 
-fn main() {
+fn main() -> TimerResult<()> {
     let (scheduler, receiver) = create_time_wheel::<Item>(Duration::from_millis(256));
 
     let five_senconds = Duration::from_secs(5);
@@ -21,10 +21,10 @@ fn main() {
         content: "test".to_string(),
         when,
     };
-    scheduler.schedule(item, five_senconds).unwrap();
+    scheduler.schedule(item, five_senconds)?;
 
     let a = receiver.recv();
     println!("recv: {:?}", a);
 
-    println!("Hello, world!");
+    Ok(())
 }
