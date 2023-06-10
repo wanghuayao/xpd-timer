@@ -1,3 +1,4 @@
+use std::sync::mpsc::Sender;
 use std::thread;
 use std::{
     borrow::BorrowMut,
@@ -15,19 +16,30 @@ use crate::{TimerError, TimerResult};
 pub struct Scheduler<T> {
     // duration between tow tick(in milliseconds)
     milli_interval: u128,
+    sender: Sender<T>,
     wheel: Arc<Mutex<Wheel<T>>>,
 }
 
 impl<T> Scheduler<T> {
     pub fn schedule_at(&self, content: T, when: SystemTime) -> TimerResult<()> {
-        let after = when.duration_since(SystemTime::now());
-        if after.is_err() {
-            // TODO: timeout right now;
-        }
+        let now = SystemTime::now();
+        let after = if when > now {
+            when.duration_since(now).unwrap()
+        } else {
+            // 'when' is the past time
+            Duration::from_millis(0)
+        };
 
-        self.schedule(content, after.unwrap())
+        self.schedule(content, after)
     }
     pub fn schedule(&self, content: T, after: Duration) -> TimerResult<()> {
+        if after.is_zero() {
+            return self
+                .sender
+                .send(content)
+                .or_else(|err| Err(TimerError::SendError(err.to_string())));
+        }
+
         let tick_times = after.as_millis() / self.milli_interval;
         let mut wheel = self.wheel.lock().unwrap();
         wheel.borrow_mut().schedule(content, tick_times)
@@ -40,15 +52,7 @@ impl<T> TickReceiver<T> {
     pub fn recv(&self) -> TimerResult<T> {
         match self.0.recv() {
             Ok(result) => Ok(result),
-            Err(err) => Err(TimerError::RecvieError(err)),
-        }
-    }
-
-    // TODO
-    pub fn stop(&self) -> TimerResult<T> {
-        match self.0.recv() {
-            Ok(result) => Ok(result),
-            Err(err) => Err(TimerError::RecvieError(err)),
+            Err(err) => Err(TimerError::SendError(err.to_string())),
         }
     }
 }
@@ -62,6 +66,7 @@ pub fn create_time_wheel<T: Send + 'static>(interval: Duration) -> (Scheduler<T>
     let milli_interval = interval.as_millis();
 
     let wheel_send = Arc::clone(&wheel);
+    let sender_send = Sender::clone(&sender); //同一通道，增加一个发送者
 
     let _handler = thread::spawn(move || {
         thread::sleep(interval);
@@ -73,11 +78,16 @@ pub fn create_time_wheel<T: Send + 'static>(interval: Duration) -> (Scheduler<T>
             let need_tick_time = start_at.elapsed().as_millis() / milli_interval;
 
             while need_tick_time - wheel.tick_times as u128 > 0 {
-                if let Some(items) = wheel.tick() {
+                wheel.tick().map(|items| {
                     for item in items {
-                        sender.send(item.data).unwrap();
+                        // ignor send error
+                        if let Err(err) = sender_send.send(item.data) {
+                            println!("Warning: {:?}", err);
+                        }
                     }
-                }
+                });
+
+                // if let Some(items) = wheel.tick() {}
             }
 
             let process_time = now.elapsed().as_millis();
@@ -91,6 +101,7 @@ pub fn create_time_wheel<T: Send + 'static>(interval: Duration) -> (Scheduler<T>
 
     (
         Scheduler {
+            sender,
             wheel,
             milli_interval,
         },
@@ -160,5 +171,21 @@ mod tests {
                 break;
             }
         }
+    }
+
+    #[test]
+    fn past_time() {
+        use crate::std::create_time_wheel;
+        use std::time::{Duration, SystemTime};
+
+        const INTERVAL: u64 = 16;
+
+        let (scheduler, receiver) = create_time_wheel::<String>(Duration::from_millis(INTERVAL));
+
+        let when = SystemTime::now() - Duration::from_secs(100);
+        scheduler.schedule_at("test".to_string(), when).unwrap();
+
+        let content = receiver.recv().unwrap();
+        assert_eq!(content, "test");
     }
 }

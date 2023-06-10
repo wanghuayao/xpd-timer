@@ -28,10 +28,10 @@ impl<T> Bucket<T> {
 
         let step_size_in_bits = (slot_count as f64).log2() as u32 * (level - 1);
 
-        println!(
-            "level:{},capacity:{},step_size_in_bits:{}",
-            level, capacity, step_size_in_bits
-        );
+        // println!(
+        //     "level:{},capacity:{},step_size_in_bits:{}",
+        //     level, capacity, step_size_in_bits
+        // );
 
         let mut slots = vec![];
         for _ in 0..slot_count {

@@ -1,9 +1,10 @@
-use std::{fmt, sync::mpsc::RecvError};
+use std::fmt;
 
 #[derive(Debug)]
 pub enum TimerError {
     OutOfRangeError,
-    RecvieError(RecvError),
+    RecvError(String),
+    SendError(String),
     InternalError(String),
 }
 
@@ -15,8 +16,9 @@ impl fmt::Display for TimerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             TimerError::OutOfRangeError => write!(f, "Over the size of timer"),
-            TimerError::RecvieError(err) => write!(f, "Internal Error:{:?}", err),
-            TimerError::InternalError(message) => write!(f, "Internal Error:{}", message),
+            TimerError::RecvError(msg) => write!(f, "Internal Error:{:?}", msg),
+            TimerError::SendError(msg) => write!(f, "Internal Error:{:?}", msg),
+            TimerError::InternalError(msg) => write!(f, "Internal Error:{}", msg),
         }
     }
 }
