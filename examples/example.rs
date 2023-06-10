@@ -1,3 +1,30 @@
+use std::{
+    cmp::Reverse,
+    time::{Duration, SystemTime},
+};
+
+use xpd_timer::create_time_wheel;
+
+#[derive(Debug)]
+struct Item {
+    content: String,
+    when: SystemTime,
+}
+
 fn main() {
+    let (scheduler, receiver) = create_time_wheel::<Item>(Duration::from_millis(256));
+
+    let five_senconds = Duration::from_secs(5);
+    let when = SystemTime::now() + five_senconds;
+
+    let item = Item {
+        content: "test".to_string(),
+        when,
+    };
+    scheduler.schedule(item, five_senconds).unwrap();
+
+    let a = receiver.recv();
+    println!("recv: {:?}", a);
+
     println!("Hello, world!");
 }
