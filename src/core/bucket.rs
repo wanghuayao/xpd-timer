@@ -6,12 +6,12 @@ use crate::TimerError::{InternalError, OutOfRangeError};
 
 #[derive(Debug)]
 pub(crate) struct Bucket<T> {
+    pub(crate) capacity: u64,
+
     slots: Vec<Slot<T>>,
     pos: usize,
     step_size_in_bits: u32,
-    pub(crate) capacity: u64,
     low_level_capacity: u64,
-
     tick_times: u64,
     next: Option<Box<Bucket<T>>>,
 

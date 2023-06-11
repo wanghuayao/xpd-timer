@@ -1,7 +1,4 @@
-use std::{
-    cmp::Reverse,
-    time::{Duration, SystemTime},
-};
+use std::time::{Duration, SystemTime};
 
 use xpd_timer::{create_time_wheel, TimerResult};
 
@@ -23,8 +20,9 @@ fn main() -> TimerResult<()> {
     };
     scheduler.schedule(item, five_senconds)?;
 
-    let a = receiver.recv();
-    println!("recv: {:?}", a);
+    let item = receiver.recv()?;
+
+    println!("recv: {:?}", item);
 
     Ok(())
 }

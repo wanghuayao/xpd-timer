@@ -1,8 +1,6 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use crate::{TimerError, TimerResult};
-
 use super::{bucket::Bucket, slot::Content};
+use crate::{TimerError, TimerResult};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const LEVEL_COUNT: u32 = 6;
 

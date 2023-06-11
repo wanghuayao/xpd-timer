@@ -1,14 +1,12 @@
-use std::sync::mpsc::Sender;
-use std::thread;
 use std::{
     borrow::BorrowMut,
     sync::{
-        mpsc::{channel, Receiver},
+        mpsc::{channel, Receiver, Sender},
         Arc, Mutex,
     },
+    thread,
+    time::{Duration, Instant, SystemTime},
 };
-
-use std::time::{Duration, Instant, SystemTime};
 
 use crate::core::{SlotSize, Wheel};
 use crate::{TimerError, TimerResult};
@@ -111,14 +109,16 @@ pub fn create_time_wheel<T: Send + 'static>(interval: Duration) -> (Scheduler<T>
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use rand::Rng;
 
     #[test]
     fn it_works() {
-        use crate::std::create_time_wheel;
+        use super::create_time_wheel;
         use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-        const INTERVAL: u64 = 16;
+        const INTERVAL: u64 = 60;
 
         let (scheduler, receiver) = create_time_wheel::<String>(Duration::from_millis(INTERVAL));
 
@@ -139,9 +139,16 @@ mod tests {
             );
         }
 
+        let start = Instant::now();
         let mut count = 0;
         loop {
             let content = receiver.recv().unwrap();
+
+            println!(
+                "expend:{}",
+                Instant::now().duration_since(start).as_millis()
+            );
+
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
@@ -175,7 +182,7 @@ mod tests {
 
     #[test]
     fn past_time() {
-        use crate::std::create_time_wheel;
+        use super::create_time_wheel;
         use std::time::{Duration, SystemTime};
 
         const INTERVAL: u64 = 16;

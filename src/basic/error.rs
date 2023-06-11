@@ -8,8 +8,6 @@ pub enum TimerError {
     InternalError(String),
 }
 
-pub type TimerResult<R> = std::result::Result<R, TimerError>;
-
 impl std::error::Error for TimerError {}
 
 impl fmt::Display for TimerError {
