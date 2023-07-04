@@ -1,6 +1,9 @@
 use super::{bucket::Bucket, slot::Content};
 use crate::{TimerError, TimerResult};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    fmt::Debug,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 const LEVEL_COUNT: u32 = 6;
 
@@ -20,16 +23,15 @@ pub struct Wheel<T> {
     bucket: Bucket<T>,
     _slot_count: u64,
     pub(crate) tick_times: u64,
-    capacity: u64,
 }
 
-impl<T> Default for Wheel<T> {
+impl<T: Debug> Default for Wheel<T> {
     fn default() -> Self {
         Wheel::new(SlotSize::Normal)
     }
 }
 
-impl<T> Wheel<T> {
+impl<T: Debug> Wheel<T> {
     pub(crate) fn new(slot_count: SlotSize) -> Self {
         let slot_count = match slot_count {
             SlotSize::Mini => 4u64,
@@ -39,11 +41,9 @@ impl<T> Wheel<T> {
         };
 
         let mut bucket = Option::None;
-        let mut capacity = 0;
 
         for level in 0..LEVEL_COUNT {
-            let raw_bucket = Bucket::new(slot_count, LEVEL_COUNT - level, bucket);
-            capacity += raw_bucket.capacity;
+            let raw_bucket = Bucket::new(LEVEL_COUNT - level, bucket);
             bucket = Option::Some(Box::new(raw_bucket));
         }
 
@@ -51,13 +51,12 @@ impl<T> Wheel<T> {
             bucket: *bucket.unwrap(),
             _slot_count: slot_count,
             tick_times: 0,
-            capacity,
         }
     }
 
     // let five_seconds = Duration::new(5, 0);
     pub(crate) fn schedule(&mut self, content: T, tick_times: u128) -> TimerResult<()> {
-        if tick_times > self.capacity as u128 {
+        if tick_times > u64::MAX as u128 {
             return Result::Err(TimerError::OutOfRangeError);
         }
 
@@ -68,7 +67,9 @@ impl<T> Wheel<T> {
             at_tick_times: self.tick_times + tick_times,
         };
 
-        self.bucket.add(item, tick_times as u64)
+        self.bucket.add(item, tick_times as u64);
+
+        Ok(())
     }
 
     pub(crate) fn tick(&mut self) -> Option<Vec<Content<T>>> {

@@ -1,110 +1,134 @@
+use std::fmt::Debug;
+
 use crate::TimerResult;
 
 use super::slot::{Content, Slot};
 
 use crate::TimerError::{InternalError, OutOfRangeError};
 
+/// Number of slots in a bucket
+const SLOT_NUM: u32 = 64;
+
 #[derive(Debug)]
 pub(crate) struct Bucket<T> {
-    pub(crate) capacity: u64,
+    /// Tracking which slots currently contain entries.
+    occupied: u64,
+    /// Current slot index
+    cursor: u32,
+    // Slots
+    slots: [Slot<T>; SLOT_NUM as usize],
+    /// Store the slot which is exceeds the capacity
+    homeless_slot: Slot<T>,
+    /// Capacity
+    capacity: u64,
 
-    slots: Vec<Slot<T>>,
-    pos: usize,
-    step_size_in_bits: u32,
-    low_level_capacity: u64,
+    /// Tick times
     tick_times: u64,
+
     next: Option<Box<Bucket<T>>>,
+
+    step_size_in_bits: u32,
 
     _level: u32,
 }
 
-impl<T> Bucket<T> {
-    pub fn new(slot_count: u64, level: u32, next: Option<Box<Bucket<T>>>) -> Self {
-        let capacity = slot_count.pow(level);
-        let mut low_level_capacity: u64 = 0;
-        for i in 1..level {
-            low_level_capacity += slot_count.pow(i);
-        }
+impl<T: Debug> Bucket<T> {
+    pub fn new(level: u32, next: Option<Box<Bucket<T>>>) -> Self {
+        let power = SLOT_NUM.ilog2();
 
-        let step_size_in_bits = (slot_count as f64).log2() as u32 * (level - 1);
+        let capacity = SLOT_NUM.pow(level);
 
-        // println!(
-        //     "level:{},capacity:{},step_size_in_bits:{}",
-        //     level, capacity, step_size_in_bits
-        // );
+        let step_size_in_bits = power * (level - 1);
 
-        let mut slots = vec![];
-        for _ in 0..slot_count {
-            slots.push(Slot::new());
+        let mut slots = Vec::<Slot<T>>::with_capacity(SLOT_NUM as usize);
+        for _ in 0..SLOT_NUM {
+            slots.push(Slot::<T>::new());
         }
 
         Bucket {
-            slots,
-            next,
-            pos: 0,
-            step_size_in_bits,
-            capacity,
-            tick_times: 0,
-            low_level_capacity,
+            occupied: 0,
+            cursor: 0,
+            slots: slots.try_into().unwrap(),
 
+            homeless_slot: Slot::new(),
+
+            capacity: 2u64.pow(power * level) - 1,
+            tick_times: 0,
+
+            next,
+            step_size_in_bits,
             _level: level,
         }
     }
 
-    pub fn add(&mut self, item: Content<T>, tick_times: u64) -> TimerResult<()> {
-        if tick_times < 1 {
-            return Err(InternalError(String::from("tick times is not allow zero")));
-        }
+    pub fn add(&mut self, item: Content<T>, tick_times: u64) {
+        debug_assert!(tick_times > 0, "tick times is not allow zero");
 
-        if tick_times > self.capacity {
+        if tick_times >= self.capacity {
             // over this bucket capacity, try to add next level bucket
             return match self.next.as_mut() {
                 Some(bucket) => bucket.add(item, tick_times - self.capacity),
-                None => Err(OutOfRangeError),
+                None => self.homeless_slot.push(item),
             };
         }
 
         // TODO: there will be panic, tick_times小于1了
-        let slot_index = ((tick_times - 1) >> self.step_size_in_bits) as usize;
-        let slot_index = (slot_index + self.pos) % self.slots.len();
+        let slot_index = (tick_times >> self.step_size_in_bits) as u32;
+
+        debug_assert!(slot_index > 0, "slot index is not allow zero");
+
+        // mark there has entity
+        self.occupied |= 1 << (slot_index - 1);
+
+        let slot_index_from_cur = (slot_index + self.cursor) % SLOT_NUM;
 
         // println!(
         //     " level:{}, index: {},  tick_times:{}, capacity:{},self.step_size_in_bits:{}",
         //     self.level, slot_index, tick_times, self.capacity, self.step_size_in_bits
         // );
 
-        self.slots[slot_index].push(item);
+        println!(
+            " {} is store in [level:{}, index: {}, index from cur:{}]",
+            tick_times, self._level, slot_index, slot_index_from_cur
+        );
 
-        Ok(())
+        self.slots[slot_index_from_cur as usize].push(item);
     }
 
     pub fn tick(&mut self) -> Option<Vec<Content<T>>> {
-        let position = self.pos;
-        let result = self.slots[position].items.take();
-        self.pos += 1;
         self.tick_times += 1;
+        self.cursor = (self.tick_times % SLOT_NUM as u64) as u32;
 
-        if self.pos == self.slots.len() {
-            // reach the max length, reposition the pointer
-            self.pos = 0;
-            self.relocate_next_bucket();
-        }
+        // there is no entiry
+        self.occupied = self.occupied >> 1;
 
-        result
+        self.slots[self.cursor as usize].items.take()
     }
 
-    fn relocate_next_bucket(&mut self) {
+    fn tick_next_bucket(&mut self) -> Option<Vec<Content<T>>> {
         if self.next.is_none() {
-            return;
+            // TODO: handle homeless
+            //       new thread
+        } else if self.cursor == 0 {
+            let bucket = self.next.as_mut().unwrap();
+            let mut result = bucket.tick();
+            let mut next_result = bucket.tick_next_bucket();
+
+            return if result.is_none() {
+                next_result
+            } else if next_result.is_none() {
+                result
+            } else {
+                let result_vec = result.as_mut().unwrap();
+                let next_result_vec = next_result.as_mut().unwrap();
+
+                result_vec.append(next_result_vec);
+
+                result
+            };
         }
 
-        let bucket = self.next.as_mut().unwrap();
-        let total_tick_time = self.tick_times << self.step_size_in_bits;
-        let upper_result = bucket.tick();
-        for item in upper_result.unwrap_or_default() {
-            let tick_times = item.at_tick_times - total_tick_time - self.low_level_capacity;
-            let _ = self.add(item, tick_times);
-        }
+        None
     }
 }
 
@@ -112,7 +136,7 @@ mod test {
     #[test]
     fn test() {
         for level in 1..6 {
-            let bucket = super::Bucket::<String>::new(2, level, None);
+            let bucket = super::Bucket::<String>::new(level, None);
             println!("{}, bucket: {:?}", level, bucket);
         }
     }

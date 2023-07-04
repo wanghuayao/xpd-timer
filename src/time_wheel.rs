@@ -1,5 +1,6 @@
 use std::{
     borrow::BorrowMut,
+    fmt::Debug,
     sync::{
         mpsc::{channel, Receiver, Sender},
         Arc, Mutex,
@@ -18,7 +19,7 @@ pub struct Scheduler<T> {
     wheel: Arc<Mutex<Wheel<T>>>,
 }
 
-impl<T> Scheduler<T> {
+impl<T: Debug> Scheduler<T> {
     pub fn schedule_at(&self, content: T, when: SystemTime) -> TimerResult<()> {
         let now = SystemTime::now();
         let after = if when > now {
@@ -55,7 +56,9 @@ impl<T> TickReceiver<T> {
     }
 }
 
-pub fn create_time_wheel<T: Send + 'static>(interval: Duration) -> (Scheduler<T>, TickReceiver<T>) {
+pub fn create_time_wheel<T: Debug + Send + 'static>(
+    interval: Duration,
+) -> (Scheduler<T>, TickReceiver<T>) {
     let (sender, receiver) = channel::<T>();
 
     let wheel = Arc::new(Mutex::new(Wheel::new(SlotSize::Normal)));
@@ -84,6 +87,8 @@ pub fn create_time_wheel<T: Send + 'static>(interval: Duration) -> (Scheduler<T>
                         }
                     }
                 });
+
+                // TODO wheel.tick_next
 
                 // if let Some(items) = wheel.tick() {}
             }
