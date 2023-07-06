@@ -3,7 +3,6 @@ mod core;
 mod time_wheel;
 
 pub use crate::basic::*;
-pub use crate::core::SlotSize;
 pub use time_wheel::{create_time_wheel, Scheduler, TickReceiver};
 
 #[cfg(test)]

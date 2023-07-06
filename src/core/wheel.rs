@@ -1,80 +1,80 @@
 use super::{bucket::Bucket, slot::Content};
-use crate::{TimerError, TimerResult};
 use std::{
     fmt::Debug,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const LEVEL_COUNT: u32 = 6;
-
-pub enum SlotSize {
-    // 2
-    Mini,
-    // 32
-    Small,
-    // 64
-    Normal,
-    // 128
-    Large,
-}
+const LEVEL_COUNT: usize = 6;
 
 #[derive(Debug)]
 pub struct Wheel<T> {
-    bucket: Bucket<T>,
-    _slot_count: u64,
+    buckets: [Bucket<T>; LEVEL_COUNT],
     pub(crate) tick_times: u64,
+    homeless_item: Vec<T>,
 }
 
 impl<T: Debug> Default for Wheel<T> {
     fn default() -> Self {
-        Wheel::new(SlotSize::Normal)
+        Wheel::new()
     }
 }
 
 impl<T: Debug> Wheel<T> {
-    pub(crate) fn new(slot_count: SlotSize) -> Self {
-        let slot_count = match slot_count {
-            SlotSize::Mini => 4u64,
-            SlotSize::Small => 32u64,
-            SlotSize::Normal => 64u64,
-            SlotSize::Large => 128u64,
-        };
-
-        let mut bucket = Option::None;
+    pub(crate) fn new() -> Self {
+        let mut buckets = Vec::with_capacity(LEVEL_COUNT);
 
         for level in 0..LEVEL_COUNT {
-            let raw_bucket = Bucket::new(LEVEL_COUNT - level, bucket);
-            bucket = Option::Some(Box::new(raw_bucket));
+            buckets.push(Bucket::new(level as u32));
         }
 
         Wheel {
-            bucket: *bucket.unwrap(),
-            _slot_count: slot_count,
+            buckets: buckets.try_into().unwrap(),
             tick_times: 0,
+            homeless_item: vec![],
         }
     }
 
     // let five_seconds = Duration::new(5, 0);
-    pub(crate) fn schedule(&mut self, content: T, tick_times: u128) -> TimerResult<()> {
-        if tick_times > u64::MAX as u128 {
-            return Result::Err(TimerError::OutOfRangeError);
+    pub(crate) fn schedule(&mut self, item: T, tick_times: u128) {
+        if let Some(level) = to_level(tick_times) {
+            self.buckets[level].add(item, tick_times as u64);
+        } else {
+            self.homeless_item.push(item);
         }
-
-        let tick_times = tick_times as u64;
-
-        let item = Content {
-            data: content,
-            at_tick_times: self.tick_times + tick_times,
-        };
-
-        self.bucket.add(item, tick_times as u64);
-
-        Ok(())
     }
 
     pub(crate) fn tick(&mut self) -> Option<Vec<Content<T>>> {
-        self.tick_times += 1;
-        self.bucket.tick()
+        for bucket in self.buckets.iter_mut() {
+            let (result, tick_times, next) = bucket.tick();
+            if let Some(_item) = result {
+                // TODO, notice
+            }
+            self.tick_times += tick_times;
+            if !next {
+                break;
+            }
+        }
+
+        // TODO will delete
+        None
+    }
+}
+
+fn to_level(times: u128) -> Option<usize> {
+    const SIZE_OF_LEVEL_0: u128 = 2 << (6 * 1);
+    const SIZE_OF_LEVEL_1: u128 = 2 << (6 * 2);
+    const SIZE_OF_LEVEL_2: u128 = 2 << (6 * 3);
+    const SIZE_OF_LEVEL_3: u128 = 2 << (6 * 4);
+    const SIZE_OF_LEVEL_4: u128 = 2 << (6 * 5);
+    const SIZE_OF_LEVEL_5: u128 = 2 << (6 * 6);
+    match times {
+        t if t < SIZE_OF_LEVEL_0 => Some(0),
+        t if t < SIZE_OF_LEVEL_1 => Some(1),
+        t if t < SIZE_OF_LEVEL_2 => Some(2),
+        t if t < SIZE_OF_LEVEL_3 => Some(3),
+        t if t < SIZE_OF_LEVEL_4 => Some(4),
+        t if t < SIZE_OF_LEVEL_5 => Some(5),
+        _ => None,
     }
 }
 
@@ -89,36 +89,6 @@ fn _current_millis() -> u128 {
 mod tests {
 
     #[test]
-    fn new_test() {
-        use super::*;
-        let wheel = Wheel::<String>::new(SlotSize::Mini);
-        println!("{:?}", wheel);
-    }
-
-    #[test]
-    fn new_test1() {
-        use super::*;
-        let mut wheel = Wheel::<String>::new(SlotSize::Mini);
-        for millis in 1..100 {
-            print!("ms: {}\t", millis);
-            let result = wheel.schedule("".to_string(), millis);
-            assert!(result.is_ok())
-        }
-    }
-
-    #[test]
-    fn new_test_all1() {
-        use super::*;
-        let mut wheel = Wheel::<String>::new(SlotSize::Mini);
-        let result = wheel.schedule("242".to_string(), 242);
-        assert!(result.is_ok());
-        for i in 1..300 {
-            println!("tick:{}", i);
-            let _ = wheel.tick();
-        }
-    }
-
-    #[test]
     fn new_test_random() {
         use super::*;
         use rand::Rng;
@@ -126,13 +96,13 @@ mod tests {
 
         const MAX_SIZE: u64 = 500;
 
-        let mut wheel = Wheel::<String>::new(SlotSize::Mini);
+        let mut wheel = Wheel::<String>::new();
 
         const ITEM_COUNT: u64 = 200;
         for _ in 0..ITEM_COUNT {
             let millis: u64 = rng.gen_range(1..=MAX_SIZE);
-            let result = wheel.schedule(millis.to_string(), millis as u128);
-            assert!(result.is_ok());
+            let _result = wheel.schedule(millis.to_string(), millis as u128);
+            // assert!(result.is_ok());
         }
 
         let mut real_item_count = 0u64;

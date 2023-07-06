@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
-use crate::core::{SlotSize, Wheel};
+use crate::core::Wheel;
 use crate::{TimerError, TimerResult};
 
 pub struct Scheduler<T> {
@@ -20,7 +20,7 @@ pub struct Scheduler<T> {
 }
 
 impl<T: Debug> Scheduler<T> {
-    pub fn schedule_at(&self, content: T, when: SystemTime) -> TimerResult<()> {
+    pub fn schedule_at(&self, content: T, when: SystemTime) {
         let now = SystemTime::now();
         let after = if when > now {
             when.duration_since(now).unwrap()
@@ -31,17 +31,19 @@ impl<T: Debug> Scheduler<T> {
 
         self.schedule(content, after)
     }
-    pub fn schedule(&self, content: T, after: Duration) -> TimerResult<()> {
+    pub fn schedule(&self, content: T, after: Duration) {
         if after.is_zero() {
-            return self
-                .sender
+            self.sender
                 .send(content)
-                .or_else(|err| Err(TimerError::SendError(err.to_string())));
+                .or_else(|err| Err(TimerError::SendError(err.to_string())))
+                .unwrap();
+
+            return;
         }
 
         let tick_times = after.as_millis() / self.milli_interval;
         let mut wheel = self.wheel.lock().unwrap();
-        wheel.borrow_mut().schedule(content, tick_times)
+        wheel.borrow_mut().schedule(content, tick_times);
     }
 }
 
@@ -61,7 +63,7 @@ pub fn create_time_wheel<T: Debug + Send + 'static>(
 ) -> (Scheduler<T>, TickReceiver<T>) {
     let (sender, receiver) = channel::<T>();
 
-    let wheel = Arc::new(Mutex::new(Wheel::new(SlotSize::Normal)));
+    let wheel = Arc::new(Mutex::new(Wheel::new()));
 
     let start_at = Instant::now();
     let milli_interval = interval.as_millis();
@@ -195,7 +197,7 @@ mod tests {
         let (scheduler, receiver) = create_time_wheel::<String>(Duration::from_millis(INTERVAL));
 
         let when = SystemTime::now() - Duration::from_secs(100);
-        scheduler.schedule_at("test".to_string(), when).unwrap();
+        scheduler.schedule_at("test".to_string(), when);
 
         let content = receiver.recv().unwrap();
         assert_eq!(content, "test");
