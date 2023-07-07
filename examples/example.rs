@@ -18,7 +18,7 @@ fn main() -> TimerResult<()> {
         content: "test".to_string(),
         when,
     };
-    scheduler.schedule(item, five_senconds)?;
+    // scheduler.schedule(item, five_senconds)?;
 
     let item = receiver.recv()?;
 

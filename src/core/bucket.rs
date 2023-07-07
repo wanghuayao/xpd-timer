@@ -5,6 +5,15 @@ use super::slot::{Content, Slot};
 /// Number of slots in a bucket
 const SLOT_NUM: u32 = 64;
 
+macro_rules! iff {
+    ($condition:expr,$true_val:expr,$false_val:expr) => {
+        if $condition {
+            $true_val
+        } else {
+            $false_val
+        }
+    };
+}
 #[derive(Debug)]
 pub(crate) struct Bucket<T> {
     /// Tracking which slots currently contain entries.
@@ -23,10 +32,11 @@ pub(crate) struct Bucket<T> {
 }
 
 impl<T: Debug> Bucket<T> {
+    /// New bucket `level` is from 0.
     pub fn new(level: u32) -> Self {
         let power = SLOT_NUM.ilog2();
 
-        let step_size_in_bits = power * (level - 1);
+        let step_size_in_bits = power * level;
 
         let mut slots = Vec::<Slot<T>>::with_capacity(SLOT_NUM as usize);
         for _ in 0..SLOT_NUM {
@@ -52,16 +62,12 @@ impl<T: Debug> Bucket<T> {
         let slot_index = (tick_times >> self.step_size_in_bits) as u32;
 
         debug_assert!(slot_index > 0, "slot index is not allow zero");
+        debug_assert!(slot_index < 64, "slot index is overflow");
 
         // mark there has entity
         self.occupied |= 1 << (slot_index - 1);
 
         let slot_index_from_cur = (slot_index + self.cursor) % SLOT_NUM;
-
-        println!(
-            " {} is store in [level:{}, index: {}, index from cur:{}]",
-            tick_times, self._level, slot_index, slot_index_from_cur
-        );
 
         self.slots[slot_index_from_cur as usize].push(Content {
             data,
@@ -69,90 +75,196 @@ impl<T: Debug> Bucket<T> {
         });
     }
 
+    // /// tick
+    // /// return
+    // pub fn tick_one(&mut self) -> (Option<Vec<Content<T>>>, u64, bool) {
+    //     self.tick_times += 1;
+    //     self.cursor = (self.tick_times % SLOT_NUM as u64) as u32;
+    //     let is_empty = (self.occupied & 1) == 1;
+    //     // there is no entiry
+    //     self.occupied = self.occupied >> 1;
+
+    //     let result = if is_empty {
+    //         None
+    //     } else {
+    //         self.slots[self.cursor as usize].items.take()
+    //     };
+
+    //     // result, tick times, need tick next
+    //     (result, 1, self.cursor == 0)
+    // }
+
     /// tick
-    /// return
-    pub fn tick(&mut self) -> (Option<Vec<Content<T>>>, u64, bool) {
+    pub fn tick(&mut self, times: u64) -> (Option<Vec<Content<T>>>, u64, bool) {
+        // distance from  start
+        let tick_times = times.min((SLOT_NUM - self.cursor) as u64);
+
+        let empty_times = tick_times.min(self.occupied.trailing_zeros() as u64);
+        if empty_times > 0 {
+            // there no Entity, only move cursor
+            self.tick_times += empty_times;
+            self.cursor = (self.tick_times % SLOT_NUM as u64) as u32;
+            self.occupied = self.occupied >> empty_times;
+
+            log::info!("empty tick {} times", empty_times);
+
+            let is_back = self.cursor == 0;
+            if times == empty_times || is_back {
+                // return parent for tick next level
+                return (None, empty_times, is_back);
+            }
+        }
+
+        // tick one time
         self.tick_times += 1;
         self.cursor = (self.tick_times % SLOT_NUM as u64) as u32;
-        let is_empty = (self.occupied & 1) == 1;
+        let is_empty = (self.occupied & 1) == 0;
         // there is no entiry
         self.occupied = self.occupied >> 1;
 
-        let result = if is_empty {
-            None
-        } else {
+        let result = iff!(
+            is_empty,
+            None,
             self.slots[self.cursor as usize].items.take()
-        };
+        );
 
         // result, tick times, need tick next
-        (result, 1, self.cursor == 0)
-    }
-
-    /// tick
-    pub fn _tick_all(&mut self, max_times: u64) -> (Option<Vec<Content<T>>>, u64, bool) {
-        let safe_tick_times = self.occupied.trailing_zeros() as u64;
-        // max value move to zero
-        let can_tick_times = (SLOT_NUM - self.cursor) as u64;
-
-        let real_tick_times = can_tick_times.min(max_times);
-
-        let empty_times = safe_tick_times.min(real_tick_times);
-
-        self.tick_times += empty_times;
-        self.cursor = (self.tick_times % SLOT_NUM as u64) as u32;
-        self.occupied = self.occupied >> empty_times;
-
-        let result = if real_tick_times > safe_tick_times {
-            let mut contents = Vec::<Content<T>>::new();
-            for _i in 0..=(real_tick_times - safe_tick_times) {
-                self.tick_times += 1;
-                self.cursor = (self.tick_times % SLOT_NUM as u64) as u32;
-                self.occupied = self.occupied >> 1;
-                let current_result = self.slots[self.cursor as usize].items.take();
-                if let Some(mut items) = current_result {
-                    // for item in items {
-                    //     contents.push(item);
-                    // }
-                    contents.append(&mut items)
-                }
-            }
-            Some(contents)
-        } else {
-            None
-        };
-
-        // result, tick times, need tick next
-        (result, real_tick_times, self.cursor == 0)
+        (result, empty_times + 1, self.cursor == 0)
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-mod test {
     #[test]
-    fn test() {
-        // use std::sync::Arc;
-        // let mut bucket2 = Arc::new(super::Bucket::<String>::new(2, None));
-        // let mut bucket = super::Bucket::<String>::new(1, Some(bucket2.clone()));
-
-        // macro_rules! content {
-        //     ($x:expr,$times:expr) => {
-        //         $crate::core::slot::Content {
-        //             data: $x.to_string(),
-        //             at_tick_times: $times,
-        //         }
-        //     };
-        // }
-
-        // bucket.add(content! { "1",63}, 63);
-        // bucket.add(content! { "2",64}, 64);
-
-        // assert_eq!(
-        //     bucket.slots[63].items.take().unwrap()[0].data,
-        //     "1".to_string()
-        // );
-
-        // assert_eq!(
-        //     bucket2.slots[1].items.take().unwrap()[0].data,
-        //     "2".to_string()
-        // );
+    fn test_new() {
+        let bucket = Bucket::<i64>::new(0);
+        assert_eq!(bucket.occupied, 0);
+        assert_eq!(bucket.cursor, 0);
+        assert_eq!(bucket.tick_times, 0);
+        assert_eq!(bucket.step_size_in_bits, 0);
+        assert_eq!(bucket._level, 0);
+        assert_eq!(bucket.slots.len(), 64);
     }
+
+    #[test]
+    fn test_add() {
+        // level 0
+        let mut bucket = Bucket::<i64>::new(0);
+        bucket.add(63, 63);
+        assert_eq!(bucket.occupied, 1u64 << (63 - 1));
+
+        bucket.add(163, 63);
+        assert_eq!(bucket.occupied, 1u64 << (63 - 1));
+
+        bucket.add(8, 8);
+        assert_eq!(bucket.occupied, 1u64 << (63 - 1) | 1u64 << (8 - 1));
+
+        let items = bucket.slots[63].items.take().unwrap();
+        assert_eq!(items.len(), 2);
+
+        let items = bucket.slots[8].items.take().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data, 8);
+
+        // level 1
+        let mut bucket2 = Bucket::<i64>::new(1);
+        bucket2.add(64, 64);
+        bucket2.add(64, 65);
+        assert_eq!(bucket2.occupied, 1u64 << (1 - 1));
+
+        bucket2.add(128, 128);
+        assert_eq!(bucket2.occupied, 1u64 << (1 - 1) | 1u64 << (2 - 1));
+
+        let items = bucket2.slots[1].items.take().unwrap();
+        assert_eq!(items.len(), 2);
+
+        let items = bucket2.slots[2].items.take().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].data, 128);
+    }
+
+    #[test]
+    fn test_tick() {
+        let mut bucket = Bucket::<i32>::new(0);
+        bucket.add(1, 1);
+        bucket.add(5, 5);
+        assert_eq!(bucket.occupied, 0b0001_0001);
+
+        let (result, tick_times, need_tick_next) = bucket.tick(1);
+        let result = result.unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].data, 1);
+        assert_eq!(tick_times, 1);
+        assert_eq!(need_tick_next, false);
+        assert_eq!(bucket.cursor, 1);
+        assert_eq!(bucket.occupied, 0b0000_1000);
+
+        let (result, tick_times, need_tick_next) = bucket.tick(4);
+        let result = result.unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].data, 5);
+        assert_eq!(tick_times, 4);
+        assert_eq!(need_tick_next, false);
+        assert_eq!(bucket.cursor, 5);
+        assert_eq!(bucket.occupied, 0b0000_0000);
+
+        bucket.add(105, 5);
+        assert_eq!(bucket.occupied, 0b0001_0000);
+        let (result, tick_times, need_tick_next) = bucket.tick(4);
+        assert_eq!(result, None);
+        assert_eq!(tick_times, 4);
+        assert_eq!(need_tick_next, false);
+        assert_eq!(bucket.cursor, 9);
+        assert_eq!(bucket.occupied, 0b0000_0001);
+
+        let (result, tick_times, need_tick_next) = bucket.tick(4);
+        let result = result.unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].data, 105);
+        assert_eq!(tick_times, 1);
+        assert_eq!(need_tick_next, false);
+        assert_eq!(bucket.cursor, 10);
+        assert_eq!(bucket.occupied, 0b0000_0000);
+
+        let (result, tick_times, need_tick_next) = bucket.tick(100);
+        assert_eq!(result, None);
+        assert_eq!(tick_times, 54);
+        assert_eq!(need_tick_next, true);
+        assert_eq!(bucket.cursor, 0);
+        assert_eq!(bucket.occupied, 0b0000_0000);
+    }
+
+    // TODO ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+
+    // #[test]
+    // fn test_tick() {
+    //     let mut bucket = Bucket::<i32>::new(1);
+    //     bucket.add(10, 100);
+    //     let (result, tick_times, need_tick_next) = bucket.tick(1);
+    //     assert_eq!(result.unwrap().len(), 1);
+    //     // assert_eq!(result.unwrap()[0].data, 10);
+    //     // assert_eq!(result.unwrap()[0].at_tick_times, 100);
+    //     assert_eq!(tick_times, 1);
+    //     assert_eq!(need_tick_next, false);
+    // }
+
+    // #[test]
+    // fn test_tick_empty() {
+    //     let mut bucket = Bucket::<i32>::new(1);
+    //     let (result, tick_times, need_tick_next) = bucket.tick(1);
+    //     assert_eq!(result, None);
+    //     assert_eq!(tick_times, 1);
+    //     assert_eq!(need_tick_next, false);
+    // }
+
+    // #[test]
+    // fn test_tick_next_level() {
+    //     let mut bucket = Bucket::<i32>::new(1);
+    //     bucket.add(10, 100);
+    //     let (result, tick_times, need_tick_next) = bucket.tick(32);
+    //     assert_eq!(result, None);
+    //     assert_eq!(tick_times, 32);
+    //     assert_eq!(need_tick_next, true);
+    // }
 }

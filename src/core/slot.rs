@@ -1,10 +1,10 @@
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Content<T> {
     pub data: T,
     pub(crate) at_tick_times: u64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Slot<T> {
     pub(crate) items: Option<Vec<Content<T>>>,
 }

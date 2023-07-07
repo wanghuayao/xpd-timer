@@ -45,7 +45,7 @@ impl<T: Debug> Wheel<T> {
 
     pub(crate) fn tick(&mut self) -> Option<Vec<Content<T>>> {
         for bucket in self.buckets.iter_mut() {
-            let (result, tick_times, next) = bucket.tick();
+            let (result, tick_times, next) = bucket.tick(1);
             if let Some(_item) = result {
                 // TODO, notice
             }
