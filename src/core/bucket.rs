@@ -101,9 +101,11 @@ impl<T: Debug> Bucket<T> {
             // there no Entity, only move cursor
             self.tick_times += empty_times as u64;
             self.cursor = (self.tick_times % SLOT_NUM as u64) as u32;
-            self.occupied = self.occupied >> empty_times;
-
-            log::info!("empty tick {} times", empty_times);
+            self.occupied = if empty_times < SLOT_NUM {
+                self.occupied >> empty_times
+            } else {
+                0
+            };
 
             let is_back = self.cursor == 0;
             if times == empty_times || is_back {

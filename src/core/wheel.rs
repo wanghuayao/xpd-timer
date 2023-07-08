@@ -52,6 +52,8 @@ impl<T: Debug> Wheel<T> {
             }
         }
 
+        self.tick_times += tick_times as u64;
+
         if !need_next_tick {
             return tick_times;
         }
@@ -60,13 +62,15 @@ impl<T: Debug> Wheel<T> {
             let (result, _, nexneed_next_tickt) = self.buckets[level].tick(1);
             if let Some(entities) = result {
                 for entity in entities {
-                    if entity.tick_times <= tick_times as u64 {
+                    if entity.tick_times <= self.tick_times as u64 {
                         // notice
                         notice(entity.data);
                     } else {
                         // add to wheel agin
-                        let level = to_level(entity.tick_times as u128);
-                        self.buckets[level.unwrap()].add(entity, tick_times as u64);
+                        let new_tick_times = entity.tick_times - self.tick_times;
+
+                        let level = to_level(new_tick_times as u128);
+                        self.buckets[level.unwrap()].add(entity, new_tick_times);
                     }
                 }
             }
@@ -85,12 +89,12 @@ impl<T: Debug> Wheel<T> {
 }
 
 fn to_level(times: u128) -> Option<usize> {
-    const SIZE_OF_LEVEL_0: u128 = 2 << (6 * 1);
-    const SIZE_OF_LEVEL_1: u128 = 2 << (6 * 2);
-    const SIZE_OF_LEVEL_2: u128 = 2 << (6 * 3);
-    const SIZE_OF_LEVEL_3: u128 = 2 << (6 * 4);
-    const SIZE_OF_LEVEL_4: u128 = 2 << (6 * 5);
-    const SIZE_OF_LEVEL_5: u128 = 2 << (6 * 6);
+    const SIZE_OF_LEVEL_0: u128 = 1 << (6 * 1);
+    const SIZE_OF_LEVEL_1: u128 = 1 << (6 * 2);
+    const SIZE_OF_LEVEL_2: u128 = 1 << (6 * 3);
+    const SIZE_OF_LEVEL_3: u128 = 1 << (6 * 4);
+    const SIZE_OF_LEVEL_4: u128 = 1 << (6 * 5);
+    const SIZE_OF_LEVEL_5: u128 = 1 << (6 * 6);
     match times {
         t if t < SIZE_OF_LEVEL_0 => Some(0),
         t if t < SIZE_OF_LEVEL_1 => Some(1),
@@ -132,7 +136,6 @@ mod tests {
         let mut tick_count = 0u64;
         for _ in 0..=MAX_SIZE {
             tick_count += 1;
-            println!("tick: {}", tick_count);
             wheel.tick(1, |item| {
                 let item_tick: u64 = item.parse().unwrap();
                 println!(" - got {:?} ", item);

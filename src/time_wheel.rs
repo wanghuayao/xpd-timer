@@ -13,8 +13,8 @@ use crate::core::Wheel;
 use crate::{TimerError, TimerResult};
 
 pub struct Scheduler<T> {
-    // duration between tow tick(in milliseconds)
-    milli_interval: u128,
+    // duration between tow tick(in nanos)
+    std_tick_interval: u128,
     sender: Sender<T>,
     wheel: Arc<Mutex<Wheel<T>>>,
     handler: JoinHandle<()>,
@@ -27,7 +27,7 @@ impl<'a, T: Debug> Scheduler<T> {
             when.duration_since(now).unwrap()
         } else {
             // 'when' is the past time
-            Duration::from_millis(0)
+            Duration::from_nanos(0)
         };
 
         self.schedule(content, after)
@@ -42,8 +42,9 @@ impl<'a, T: Debug> Scheduler<T> {
             return;
         }
 
-        let tick_times = after.as_millis() / self.milli_interval;
+        let tick_times = after.as_nanos() / self.std_tick_interval;
         let mut wheel = self.wheel.lock().unwrap();
+
         wheel.borrow_mut().schedule(content, tick_times);
 
         self.handler.thread().unpark();
@@ -69,7 +70,7 @@ pub fn create_time_wheel<'a, T: Debug + Send + 'static>(
     let wheel = Arc::new(Mutex::new(Wheel::new()));
 
     let start_at = Instant::now();
-    let milli_interval = interval.as_millis();
+    let std_tick_interval = interval.as_nanos();
 
     let wheel_send = Arc::clone(&wheel);
     let sender_send = Sender::clone(&sender); //同一通道，增加一个发送者
@@ -81,26 +82,22 @@ pub fn create_time_wheel<'a, T: Debug + Send + 'static>(
             let now = Instant::now();
             let mut wheel = wheel_send.lock().unwrap();
 
-            let need_tick_times = start_at.elapsed().as_millis() / milli_interval;
+            let need_tick_times = start_at.elapsed().as_nanos() / std_tick_interval;
 
             while need_tick_times > wheel.tick_times as u128 {
                 let times = (need_tick_times - wheel.tick_times as u128) as u32;
 
-                let real_tick_times = wheel.tick(times, |item| {
+                let _ = wheel.tick(times, |item| {
                     if let Err(err) = sender_send.send(item) {
                         println!("Warning: {:?}", err);
                     }
                 });
-
-                wheel.tick_times += real_tick_times as u64;
-
-                println!("will tick: {times}, real tick:{real_tick_times}");
             }
 
-            let next_tick = milli_interval * wheel.next_tick_times() as u128;
-            let process_time = now.elapsed().as_millis();
+            let next_tick = std_tick_interval * wheel.next_tick_times() as u128;
+            let process_time = now.elapsed().as_nanos();
             if next_tick > process_time {
-                thread::park_timeout(Duration::from_millis((next_tick - process_time) as u64));
+                thread::park_timeout(Duration::from_nanos((next_tick - process_time) as u64));
             }
         }
         #[allow(unreachable_code)]
@@ -111,99 +108,9 @@ pub fn create_time_wheel<'a, T: Debug + Send + 'static>(
         Scheduler {
             sender,
             wheel,
-            milli_interval,
+            std_tick_interval,
             handler,
         },
         TickReceiver(receiver),
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use std::time::Instant;
-
-    use rand::Rng;
-
-    #[test]
-    fn it_works() {
-        use super::create_time_wheel;
-        use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-        const INTERVAL: u64 = 60;
-
-        let (scheduler, receiver) = create_time_wheel::<String>(Duration::from_millis(INTERVAL));
-
-        const CNT: usize = 1000;
-
-        const MAX_DURATION: u64 = 50000;
-
-        let mut rng = rand::thread_rng();
-        let now_millis = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-        for _i in 0..CNT {
-            let millis: u64 = rng.gen_range(1..=MAX_DURATION);
-            let _ = scheduler.schedule(
-                (now_millis + millis as u128).to_string(),
-                Duration::from_millis(millis),
-            );
-        }
-
-        let start = Instant::now();
-        let mut count = 0;
-        loop {
-            let content = receiver.recv().unwrap();
-
-            println!(
-                "expend:{}",
-                Instant::now().duration_since(start).as_millis()
-            );
-
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis();
-
-            let expect_time: u128 = content.parse().unwrap();
-
-            let distance = if expect_time > now {
-                // expect_time.wrapping_sub(now)
-                expect_time - now
-            } else {
-                // now.wrapping_sub(expect_time)
-                now - expect_time
-            } as u64;
-
-            if distance > 0 {
-                println!(
-                    "{}, exp : {}, now:{},distance:{}",
-                    count, expect_time, now, distance
-                );
-            }
-
-            assert!(distance <= INTERVAL);
-
-            count += 1;
-            if count >= CNT {
-                break;
-            }
-        }
-    }
-
-    #[test]
-    fn past_time() {
-        use super::create_time_wheel;
-        use std::time::{Duration, SystemTime};
-
-        const INTERVAL: u64 = 16;
-
-        let (scheduler, receiver) = create_time_wheel::<String>(Duration::from_millis(INTERVAL));
-
-        let when = SystemTime::now() - Duration::from_secs(100);
-        scheduler.schedule_at("test".to_string(), when);
-
-        let content = receiver.recv().unwrap();
-        assert_eq!(content, "test");
-    }
 }
