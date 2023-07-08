@@ -80,19 +80,13 @@ pub fn create_time_wheel<T: Debug + Send + 'static>(
 
             let need_tick_time = start_at.elapsed().as_millis() / milli_interval;
 
-            while need_tick_time - wheel.tick_times as u128 > 0 {
-                wheel.tick().map(|items| {
-                    for item in items {
-                        // ignor send error
-                        if let Err(err) = sender_send.send(item.data) {
-                            println!("Warning: {:?}", err);
-                        }
+            while need_tick_time > wheel.tick_times as u128 {
+                let times = (need_tick_time - wheel.tick_times as u128) as u32;
+                let _ = wheel.tick(times, |item| {
+                    if let Err(err) = sender_send.send(item) {
+                        println!("Warning: {:?}", err);
                     }
                 });
-
-                // TODO wheel.tick_next
-
-                // if let Some(items) = wheel.tick() {}
             }
 
             let process_time = now.elapsed().as_millis();

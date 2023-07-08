@@ -55,7 +55,7 @@ impl<T: Debug> Bucket<T> {
         }
     }
 
-    pub fn add(&mut self, data: T, tick_times: u64) {
+    pub fn add(&mut self, entity: Content<T>, tick_times: u64) {
         debug_assert!(tick_times > 0, "tick times is not allow zero");
 
         // TODO: there will be panic, tick_times小于1了
@@ -69,10 +69,7 @@ impl<T: Debug> Bucket<T> {
 
         let slot_index_from_cur = (slot_index + self.cursor) % SLOT_NUM;
 
-        self.slots[slot_index_from_cur as usize].push(Content {
-            data,
-            at_tick_times: self.tick_times + tick_times as u64,
-        });
+        self.slots[slot_index_from_cur as usize].push(entity);
     }
 
     // /// tick
@@ -95,14 +92,14 @@ impl<T: Debug> Bucket<T> {
     // }
 
     /// tick
-    pub fn tick(&mut self, times: u64) -> (Option<Vec<Content<T>>>, u64, bool) {
+    pub fn tick(&mut self, times: u32) -> (Option<Vec<Content<T>>>, u32, bool) {
         // distance from  start
-        let tick_times = times.min((SLOT_NUM - self.cursor) as u64);
+        let tick_times = times.min(SLOT_NUM - self.cursor);
 
-        let empty_times = tick_times.min(self.occupied.trailing_zeros() as u64);
+        let empty_times = tick_times.min(self.occupied.trailing_zeros());
         if empty_times > 0 {
             // there no Entity, only move cursor
-            self.tick_times += empty_times;
+            self.tick_times += empty_times as u64;
             self.cursor = (self.tick_times % SLOT_NUM as u64) as u32;
             self.occupied = self.occupied >> empty_times;
 
@@ -131,10 +128,35 @@ impl<T: Debug> Bucket<T> {
         // result, tick times, need tick next
         (result, empty_times + 1, self.cursor == 0)
     }
+
+    pub(crate) fn next_tick_interval(&self) -> u32 {
+        let distance_to_zero = SLOT_NUM - self.cursor;
+
+        let next_entity_pos = self.occupied.trailing_zeros() + 1;
+
+        distance_to_zero.min(next_entity_pos)
+    }
 }
+
+// Test
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    macro_rules! content {
+        ($item:expr) => {
+            Content {
+                data: $item,
+                tick_times: $item,
+            }
+        };
+        ($item:expr, $times: expr) => {
+            Content {
+                data: $item,
+                tick_times: $times,
+            }
+        };
+    }
 
     #[test]
     fn test_new() {
@@ -150,14 +172,14 @@ mod tests {
     #[test]
     fn test_add() {
         // level 0
-        let mut bucket = Bucket::<i64>::new(0);
-        bucket.add(63, 63);
+        let mut bucket = Bucket::<u64>::new(0);
+        bucket.add(content!(63), 63);
         assert_eq!(bucket.occupied, 1u64 << (63 - 1));
 
-        bucket.add(163, 63);
+        bucket.add(content!(163), 63);
         assert_eq!(bucket.occupied, 1u64 << (63 - 1));
 
-        bucket.add(8, 8);
+        bucket.add(content!(8), 8);
         assert_eq!(bucket.occupied, 1u64 << (63 - 1) | 1u64 << (8 - 1));
 
         let items = bucket.slots[63].items.take().unwrap();
@@ -169,11 +191,11 @@ mod tests {
 
         // level 1
         let mut bucket2 = Bucket::<i64>::new(1);
-        bucket2.add(64, 64);
-        bucket2.add(64, 65);
+        bucket2.add(content!(64), 64);
+        bucket2.add(content!(65), 65);
         assert_eq!(bucket2.occupied, 1u64 << (1 - 1));
 
-        bucket2.add(128, 128);
+        bucket2.add(content!(128), 128);
         assert_eq!(bucket2.occupied, 1u64 << (1 - 1) | 1u64 << (2 - 1));
 
         let items = bucket2.slots[1].items.take().unwrap();
@@ -186,9 +208,9 @@ mod tests {
 
     #[test]
     fn test_tick() {
-        let mut bucket = Bucket::<i32>::new(0);
-        bucket.add(1, 1);
-        bucket.add(5, 5);
+        let mut bucket = Bucket::<u64>::new(0);
+        bucket.add(content!(1), 1);
+        bucket.add(content!(5), 5);
         assert_eq!(bucket.occupied, 0b0001_0001);
 
         let (result, tick_times, need_tick_next) = bucket.tick(1);
@@ -209,7 +231,7 @@ mod tests {
         assert_eq!(bucket.cursor, 5);
         assert_eq!(bucket.occupied, 0b0000_0000);
 
-        bucket.add(105, 5);
+        bucket.add(content!(105), 5);
         assert_eq!(bucket.occupied, 0b0001_0000);
         let (result, tick_times, need_tick_next) = bucket.tick(4);
         assert_eq!(result, None);
@@ -235,36 +257,22 @@ mod tests {
         assert_eq!(bucket.occupied, 0b0000_0000);
     }
 
-    // TODO ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
+    #[test]
+    fn test_next_tick_interval() {
+        let mut bucket = Bucket::<u64>::new(0);
+        assert_eq!(bucket.next_tick_interval(), SLOT_NUM);
 
-    // #[test]
-    // fn test_tick() {
-    //     let mut bucket = Bucket::<i32>::new(1);
-    //     bucket.add(10, 100);
-    //     let (result, tick_times, need_tick_next) = bucket.tick(1);
-    //     assert_eq!(result.unwrap().len(), 1);
-    //     // assert_eq!(result.unwrap()[0].data, 10);
-    //     // assert_eq!(result.unwrap()[0].at_tick_times, 100);
-    //     assert_eq!(tick_times, 1);
-    //     assert_eq!(need_tick_next, false);
-    // }
+        bucket.add(content!(1), 1);
+        assert_eq!(bucket.next_tick_interval(), 1);
 
-    // #[test]
-    // fn test_tick_empty() {
-    //     let mut bucket = Bucket::<i32>::new(1);
-    //     let (result, tick_times, need_tick_next) = bucket.tick(1);
-    //     assert_eq!(result, None);
-    //     assert_eq!(tick_times, 1);
-    //     assert_eq!(need_tick_next, false);
-    // }
+        bucket.tick(1);
+        assert_eq!(bucket.next_tick_interval(), SLOT_NUM - 1);
 
-    // #[test]
-    // fn test_tick_next_level() {
-    //     let mut bucket = Bucket::<i32>::new(1);
-    //     bucket.add(10, 100);
-    //     let (result, tick_times, need_tick_next) = bucket.tick(32);
-    //     assert_eq!(result, None);
-    //     assert_eq!(tick_times, 32);
-    //     assert_eq!(need_tick_next, true);
-    // }
+        bucket.tick(10);
+        assert_eq!(bucket.next_tick_interval(), SLOT_NUM - 1 - 10);
+
+        bucket.add(content!((SLOT_NUM - 1) as u64), (SLOT_NUM - 1) as u64);
+
+        assert_eq!(bucket.next_tick_interval(), SLOT_NUM - 1 - 10);
+    }
 }

@@ -1,7 +1,7 @@
 #[derive(Debug, PartialEq, Eq)]
 pub struct Content<T> {
     pub data: T,
-    pub(crate) at_tick_times: u64,
+    pub(crate) tick_times: u64,
 }
 
 #[derive(Debug, PartialEq, Eq)]

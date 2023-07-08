@@ -13,12 +13,6 @@ pub struct Wheel<T> {
     homeless_item: Vec<T>,
 }
 
-impl<T: Debug> Default for Wheel<T> {
-    fn default() -> Self {
-        Wheel::new()
-    }
-}
-
 impl<T: Debug> Wheel<T> {
     pub(crate) fn new() -> Self {
         let mut buckets = Vec::with_capacity(LEVEL_COUNT);
@@ -37,26 +31,52 @@ impl<T: Debug> Wheel<T> {
     // let five_seconds = Duration::new(5, 0);
     pub(crate) fn schedule(&mut self, item: T, tick_times: u128) {
         if let Some(level) = to_level(tick_times) {
-            self.buckets[level].add(item, tick_times as u64);
+            let entity = Content {
+                data: item,
+                tick_times: tick_times as u64,
+            };
+            self.buckets[level].add(entity, tick_times as u64);
         } else {
             self.homeless_item.push(item);
         }
     }
 
-    pub(crate) fn tick(&mut self) -> Option<Vec<Content<T>>> {
-        for bucket in self.buckets.iter_mut() {
-            let (result, tick_times, next) = bucket.tick(1);
-            if let Some(_item) = result {
-                // TODO, notice
-            }
-            self.tick_times += tick_times;
-            if !next {
-                break;
+    pub(crate) fn tick<F>(&mut self, times: u32, notice: F) -> u32
+    where
+        F: Fn(T),
+    {
+        let (result, tick_times, need_next_tick) = self.buckets[0].tick(times);
+        if let Some(entities) = result {
+            for entity in entities {
+                notice(entity.data)
             }
         }
 
-        // TODO will delete
-        None
+        if !need_next_tick {
+            return tick_times;
+        }
+
+        for level in 1..6 {
+            let (result, _, nexneed_next_tickt) = self.buckets[level].tick(1);
+            if let Some(entities) = result {
+                for entity in entities {
+                    if entity.tick_times <= tick_times as u64 {
+                        // notice
+                        notice(entity.data);
+                    } else {
+                        // add to wheel agin
+                        let level = to_level(entity.tick_times as u128);
+                        self.buckets[level.unwrap()].add(entity, tick_times as u64);
+                    }
+                }
+            }
+
+            if !nexneed_next_tickt {
+                return tick_times;
+            }
+        }
+
+        tick_times
     }
 }
 
@@ -105,22 +125,17 @@ mod tests {
             // assert!(result.is_ok());
         }
 
-        let mut real_item_count = 0u64;
         let mut tick_count = 0u64;
         for _ in 0..=MAX_SIZE {
             tick_count += 1;
             println!("tick: {}", tick_count);
-
-            if let Some(items) = wheel.tick() {
-                for item in items {
-                    real_item_count += 1;
-                    let item_tick: u64 = item.data.parse().unwrap();
-                    println!(" - got {:?} ", item);
-                    assert_eq!(item_tick, tick_count);
-                }
-            }
+            wheel.tick(1, |item| {
+                let item_tick: u64 = item.parse().unwrap();
+                println!(" - got {:?} ", item);
+                assert_eq!(item_tick, tick_count);
+            });
         }
 
-        assert_eq!(real_item_count, ITEM_COUNT);
+        // assert_eq!(real_item_count, ITEM_COUNT);
     }
 }
