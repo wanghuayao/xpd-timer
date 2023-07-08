@@ -5,7 +5,7 @@ use std::{
         mpsc::{channel, Receiver, Sender},
         Arc, Mutex,
     },
-    thread,
+    thread::{self, JoinHandle},
     time::{Duration, Instant, SystemTime},
 };
 
@@ -17,9 +17,10 @@ pub struct Scheduler<T> {
     milli_interval: u128,
     sender: Sender<T>,
     wheel: Arc<Mutex<Wheel<T>>>,
+    handler: JoinHandle<()>,
 }
 
-impl<T: Debug> Scheduler<T> {
+impl<'a, T: Debug> Scheduler<T> {
     pub fn schedule_at(&self, content: T, when: SystemTime) {
         let now = SystemTime::now();
         let after = if when > now {
@@ -44,6 +45,8 @@ impl<T: Debug> Scheduler<T> {
         let tick_times = after.as_millis() / self.milli_interval;
         let mut wheel = self.wheel.lock().unwrap();
         wheel.borrow_mut().schedule(content, tick_times);
+
+        self.handler.thread().unpark();
     }
 }
 
@@ -58,7 +61,7 @@ impl<T> TickReceiver<T> {
     }
 }
 
-pub fn create_time_wheel<T: Debug + Send + 'static>(
+pub fn create_time_wheel<'a, T: Debug + Send + 'static>(
     interval: Duration,
 ) -> (Scheduler<T>, TickReceiver<T>) {
     let (sender, receiver) = channel::<T>();
@@ -71,31 +74,37 @@ pub fn create_time_wheel<T: Debug + Send + 'static>(
     let wheel_send = Arc::clone(&wheel);
     let sender_send = Sender::clone(&sender); //同一通道，增加一个发送者
 
-    let _handler = thread::spawn(move || {
+    let handler = thread::spawn(move || {
         thread::sleep(interval);
 
         loop {
             let now = Instant::now();
             let mut wheel = wheel_send.lock().unwrap();
 
-            let need_tick_time = start_at.elapsed().as_millis() / milli_interval;
+            let need_tick_times = start_at.elapsed().as_millis() / milli_interval;
 
-            while need_tick_time > wheel.tick_times as u128 {
-                let times = (need_tick_time - wheel.tick_times as u128) as u32;
-                let _ = wheel.tick(times, |item| {
+            while need_tick_times > wheel.tick_times as u128 {
+                let times = (need_tick_times - wheel.tick_times as u128) as u32;
+
+                let real_tick_times = wheel.tick(times, |item| {
                     if let Err(err) = sender_send.send(item) {
                         println!("Warning: {:?}", err);
                     }
                 });
+
+                wheel.tick_times += real_tick_times as u64;
+
+                println!("will tick: {times}, real tick:{real_tick_times}");
             }
 
+            let next_tick = milli_interval * wheel.next_tick_times() as u128;
             let process_time = now.elapsed().as_millis();
-            if milli_interval > process_time {
-                thread::sleep(Duration::from_millis(
-                    (milli_interval - process_time) as u64,
-                ));
+            if next_tick > process_time {
+                thread::park_timeout(Duration::from_millis((next_tick - process_time) as u64));
             }
         }
+        #[allow(unreachable_code)]
+        ()
     });
 
     (
@@ -103,6 +112,7 @@ pub fn create_time_wheel<T: Debug + Send + 'static>(
             sender,
             wheel,
             milli_interval,
+            handler,
         },
         TickReceiver(receiver),
     )

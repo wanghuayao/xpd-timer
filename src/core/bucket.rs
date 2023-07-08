@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use super::slot::{Content, Slot};
 
 /// Number of slots in a bucket
-const SLOT_NUM: u32 = 64;
+pub(super) const SLOT_NUM: u32 = 64;
 
 macro_rules! iff {
     ($condition:expr,$true_val:expr,$false_val:expr) => {
@@ -129,7 +129,7 @@ impl<T: Debug> Bucket<T> {
         (result, empty_times + 1, self.cursor == 0)
     }
 
-    pub(crate) fn next_tick_interval(&self) -> u32 {
+    pub(crate) fn next_tick_times(&self) -> u32 {
         let distance_to_zero = SLOT_NUM - self.cursor;
 
         let next_entity_pos = self.occupied.trailing_zeros() + 1;
@@ -260,19 +260,19 @@ mod tests {
     #[test]
     fn test_next_tick_interval() {
         let mut bucket = Bucket::<u64>::new(0);
-        assert_eq!(bucket.next_tick_interval(), SLOT_NUM);
+        assert_eq!(bucket.next_tick_times(), SLOT_NUM);
 
         bucket.add(content!(1), 1);
-        assert_eq!(bucket.next_tick_interval(), 1);
+        assert_eq!(bucket.next_tick_times(), 1);
 
         bucket.tick(1);
-        assert_eq!(bucket.next_tick_interval(), SLOT_NUM - 1);
+        assert_eq!(bucket.next_tick_times(), SLOT_NUM - 1);
 
         bucket.tick(10);
-        assert_eq!(bucket.next_tick_interval(), SLOT_NUM - 1 - 10);
+        assert_eq!(bucket.next_tick_times(), SLOT_NUM - 1 - 10);
 
         bucket.add(content!((SLOT_NUM - 1) as u64), (SLOT_NUM - 1) as u64);
 
-        assert_eq!(bucket.next_tick_interval(), SLOT_NUM - 1 - 10);
+        assert_eq!(bucket.next_tick_times(), SLOT_NUM - 1 - 10);
     }
 }

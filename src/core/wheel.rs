@@ -78,6 +78,10 @@ impl<T: Debug> Wheel<T> {
 
         tick_times
     }
+
+    pub(crate) fn next_tick_times(&self) -> u32 {
+        self.buckets[0].next_tick_times()
+    }
 }
 
 fn to_level(times: u128) -> Option<usize> {
