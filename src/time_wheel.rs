@@ -13,7 +13,7 @@ use crate::core::Wheel;
 use crate::{TimerError, TimerResult};
 
 pub struct Scheduler<T> {
-    // duration between tow tick(in nanos)
+    // duration between two ticks(in nanos)
     std_tick_interval: u128,
     sender: Sender<T>,
     wheel: Arc<Mutex<Wheel<T>>>,
@@ -73,7 +73,7 @@ pub fn create_time_wheel<'a, T: Debug + Send + 'static>(
     let std_tick_interval = interval.as_nanos();
 
     let wheel_send = Arc::clone(&wheel);
-    let sender_send = Sender::clone(&sender); //同一通道，增加一个发送者
+    let sender_send = sender.clone(); // Clone the sender for the same channel
 
     let handler = thread::spawn(move || {
         thread::sleep(interval);

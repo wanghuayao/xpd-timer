@@ -2,6 +2,7 @@ use std::time::{Duration, SystemTime};
 
 use xpd_timer::{create_time_wheel, TimerResult};
 
+#[allow(unused)]
 #[derive(Debug)]
 struct Item {
     content: String,

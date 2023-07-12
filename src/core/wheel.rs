@@ -28,7 +28,6 @@ impl<T: Debug> Wheel<T> {
         }
     }
 
-    // let five_seconds = Duration::new(5, 0);
     pub(crate) fn schedule(&mut self, item: T, tick_times: u128) {
         if let Some(level) = to_level(tick_times) {
             let entity = Content {
@@ -59,23 +58,21 @@ impl<T: Debug> Wheel<T> {
         }
 
         for level in 1..6 {
-            let (result, _, nexneed_next_tickt) = self.buckets[level].tick(1);
+            let (result, _, need_next_tick) = self.buckets[level].tick(1);
             if let Some(entities) = result {
                 for entity in entities {
                     if entity.tick_times <= self.tick_times as u64 {
-                        // notice
                         notice(entity.data);
                     } else {
                         // add to wheel agin
                         let new_tick_times = entity.tick_times - self.tick_times;
-
                         let level = to_level(new_tick_times as u128);
                         self.buckets[level.unwrap()].add(entity, new_tick_times);
                     }
                 }
             }
 
-            if !nexneed_next_tickt {
+            if !need_next_tick {
                 return tick_times;
             }
         }
@@ -142,7 +139,6 @@ mod tests {
                 assert_eq!(item_tick, tick_count);
             });
         }
-
         // assert_eq!(real_item_count, ITEM_COUNT);
     }
 }
