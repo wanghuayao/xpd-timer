@@ -20,8 +20,10 @@ pub struct Scheduler<T> {
     handler: JoinHandle<()>,
 }
 
-impl<'a, T: Debug> Scheduler<T> {
-    pub fn schedule_at(&self, content: T, when: SystemTime) {
+pub struct InnerScheduler<'a, T>(&'a Scheduler<T>, T);
+
+impl<'a, T: Debug> InnerScheduler<'a, T> {
+    pub fn at(self, when: SystemTime) {
         let now = SystemTime::now();
         let after = if when > now {
             when.duration_since(now).unwrap()
@@ -30,24 +32,33 @@ impl<'a, T: Debug> Scheduler<T> {
             Duration::from_nanos(0)
         };
 
-        self.schedule(content, after)
+        self.after(after);
     }
-    pub fn schedule(&self, content: T, after: Duration) {
+    pub fn after(self, after: Duration) {
+        let InnerScheduler(scheduler, entity) = self;
+
         if after.is_zero() {
-            self.sender
-                .send(content)
+            scheduler
+                .sender
+                .send(entity)
                 .or_else(|err| Err(TimerError::SendError(err.to_string())))
                 .unwrap();
 
             return;
         }
 
-        let tick_times = after.as_nanos() / self.std_tick_interval;
-        let mut wheel = self.wheel.lock().unwrap();
+        let tick_times = after.as_nanos() / scheduler.std_tick_interval;
+        let mut wheel = scheduler.wheel.lock().unwrap();
 
-        wheel.borrow_mut().schedule(content, tick_times);
+        wheel.borrow_mut().schedule(entity, tick_times);
 
-        self.handler.thread().unpark();
+        scheduler.handler.thread().unpark();
+    }
+}
+
+impl<T: Debug> Scheduler<T> {
+    pub fn arrange(&self, entity: T) -> InnerScheduler<T> {
+        return InnerScheduler(self, entity);
     }
 }
 

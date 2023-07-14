@@ -1,33 +1,22 @@
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant};
 
 use xpd_timer::{create_time_wheel, TimerResult};
 
 #[allow(unused)]
-#[derive(Debug)]
-struct Item {
-    content: String,
-    when: SystemTime,
-}
-
 fn main() -> TimerResult<()> {
-    let (scheduler, receiver) = create_time_wheel::<Item>(Duration::from_millis(1));
+    let (scheduler, receiver) = create_time_wheel::<String>(Duration::from_micros(512));
 
-    println!("recv: {:?}", SystemTime::now());
-    let five_senconds = Duration::from_secs(5);
-    let now = SystemTime::now();
-    let when = now + five_senconds;
+    let start = Instant::now();
 
-    let item = Item {
-        content: "test".to_string(),
-        when,
-    };
-    scheduler.schedule(item, five_senconds);
+    let entity = "test".into();
+    scheduler.arrange(entity).after(Duration::from_secs(5));
 
-    let item = receiver.recv()?;
+    let result = receiver.recv()?;
 
     println!(
-        "recv: {:?}",
-        SystemTime::now().duration_since(now).unwrap().as_millis()
+        "recived [{}] after {} millis",
+        result,
+        start.elapsed().as_millis()
     );
 
     Ok(())
