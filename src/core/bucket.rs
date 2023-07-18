@@ -24,8 +24,7 @@ pub(crate) struct Bucket<T> {
     slots: [Slot<T>; SLOT_NUM as usize],
 
     /// Tick times
-    tick_times: u64,
-
+    // tick_times: u64,
     step_size_in_bits: u32,
 
     _level: u32,
@@ -48,18 +47,17 @@ impl<T: Debug> Bucket<T> {
             cursor: 0,
             slots: slots.try_into().unwrap(),
 
-            tick_times: 0,
-
+            // tick_times: 0,
             step_size_in_bits,
             _level: level,
         }
     }
 
-    pub fn add(&mut self, entity: Content<T>, tick_times: u64) {
-        debug_assert!(tick_times > 0, "tick times is not allow zero");
+    pub fn add(&mut self, entity: Content<T>, offset: u64) {
+        debug_assert!(offset > 0, "tick times is not allow zero");
 
         // TODO: there will be panic, tick_times小于1了
-        let slot_index = (tick_times >> self.step_size_in_bits) as u32;
+        let slot_index = (offset >> self.step_size_in_bits) as u32;
 
         debug_assert!(slot_index > 0, "slot index is not allow zero");
         debug_assert!(slot_index < 64, "slot index is overflow");
@@ -97,10 +95,11 @@ impl<T: Debug> Bucket<T> {
         let tick_times = times.min(SLOT_NUM - self.cursor);
 
         let empty_times = tick_times.min(self.occupied.trailing_zeros());
+
         if empty_times > 0 {
             // there no Entity, only move cursor
-            self.tick_times += empty_times as u64;
-            self.cursor = (self.tick_times % SLOT_NUM as u64) as u32;
+            // self.tick_times += empty_times as u64;
+            self.cursor = ((self.cursor + empty_times) % SLOT_NUM) as u32;
             self.occupied = if empty_times < SLOT_NUM {
                 self.occupied >> empty_times
             } else {
@@ -115,8 +114,8 @@ impl<T: Debug> Bucket<T> {
         }
 
         // tick one time
-        self.tick_times += 1;
-        self.cursor = (self.tick_times % SLOT_NUM as u64) as u32;
+        // self.tick_times += 1;
+        self.cursor = ((self.cursor + 1) % SLOT_NUM) as u32;
         let is_empty = (self.occupied & 1) == 0;
         // there is no entiry
         self.occupied = self.occupied >> 1;
@@ -165,7 +164,7 @@ mod tests {
         let bucket = Bucket::<i64>::new(0);
         assert_eq!(bucket.occupied, 0);
         assert_eq!(bucket.cursor, 0);
-        assert_eq!(bucket.tick_times, 0);
+        // assert_eq!(bucket.tick_times, 0);
         assert_eq!(bucket.step_size_in_bits, 0);
         assert_eq!(bucket._level, 0);
         assert_eq!(bucket.slots.len(), 64);
@@ -278,5 +277,3 @@ mod tests {
         assert_eq!(bucket.next_tick_times(), SLOT_NUM - 1 - 10);
     }
 }
-
-

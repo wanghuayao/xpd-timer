@@ -28,15 +28,15 @@ impl<T: Debug> Wheel<T> {
         }
     }
 
-    pub(crate) fn schedule(&mut self, item: T, tick_times: u128) {
-        if let Some(level) = to_level(tick_times) {
+    pub(crate) fn schedule(&mut self, entity: T, offset: u64) {
+        if let Some(level) = to_level(offset) {
             let entity = Content {
-                data: item,
-                tick_times: tick_times as u64,
+                data: entity,
+                tick_times: offset + self.tick_times,
             };
-            self.buckets[level].add(entity, tick_times as u64);
+            self.buckets[level].add(entity, offset as u64);
         } else {
-            self.homeless_item.push(item);
+            self.homeless_item.push(entity);
         }
     }
 
@@ -45,8 +45,18 @@ impl<T: Debug> Wheel<T> {
         F: Fn(T),
     {
         let (result, tick_times, need_next_tick) = self.buckets[0].tick(times);
+
         if let Some(entities) = result {
             for entity in entities {
+                #[cfg(debug_assertions)]
+                println!(
+                    "1notice........... at {},{:?}",
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis(),
+                    entity
+                );
                 notice(entity.data)
             }
         }
@@ -57,17 +67,28 @@ impl<T: Debug> Wheel<T> {
             return tick_times;
         }
 
-        for level in 1..6 {
+        for level in 1..LEVEL_COUNT {
             let (result, _, need_next_tick) = self.buckets[level].tick(1);
+
             if let Some(entities) = result {
                 for entity in entities {
                     if entity.tick_times <= self.tick_times as u64 {
+                        #[cfg(debug_assertions)]
+                        println!(
+                            "2notice........... at {},{:?}",
+                            SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap()
+                                .as_millis(),
+                            entity
+                        );
                         notice(entity.data);
                     } else {
                         // add to wheel agin
-                        let new_tick_times = entity.tick_times - self.tick_times;
-                        let level = to_level(new_tick_times as u128);
-                        self.buckets[level.unwrap()].add(entity, new_tick_times);
+                        let offset = entity.tick_times - self.tick_times;
+                        let level = to_level(offset);
+
+                        self.buckets[level.unwrap()].add(entity, offset);
                     }
                 }
             }
@@ -85,14 +106,14 @@ impl<T: Debug> Wheel<T> {
     }
 }
 
-fn to_level(times: u128) -> Option<usize> {
-    const SIZE_OF_LEVEL_0: u128 = 1 << (6 * 1);
-    const SIZE_OF_LEVEL_1: u128 = 1 << (6 * 2);
-    const SIZE_OF_LEVEL_2: u128 = 1 << (6 * 3);
-    const SIZE_OF_LEVEL_3: u128 = 1 << (6 * 4);
-    const SIZE_OF_LEVEL_4: u128 = 1 << (6 * 5);
-    const SIZE_OF_LEVEL_5: u128 = 1 << (6 * 6);
-    match times {
+fn to_level(offset: u64) -> Option<usize> {
+    const SIZE_OF_LEVEL_0: u64 = 1 << (6 * 1);
+    const SIZE_OF_LEVEL_1: u64 = 1 << (6 * 2);
+    const SIZE_OF_LEVEL_2: u64 = 1 << (6 * 3);
+    const SIZE_OF_LEVEL_3: u64 = 1 << (6 * 4);
+    const SIZE_OF_LEVEL_4: u64 = 1 << (6 * 5);
+    const SIZE_OF_LEVEL_5: u64 = 1 << (6 * 6);
+    match offset {
         t if t < SIZE_OF_LEVEL_0 => Some(0),
         t if t < SIZE_OF_LEVEL_1 => Some(1),
         t if t < SIZE_OF_LEVEL_2 => Some(2),
@@ -125,8 +146,8 @@ mod tests {
 
         const ITEM_COUNT: u64 = 200;
         for _ in 0..ITEM_COUNT {
-            let millis: u64 = rng.gen_range(1..=MAX_SIZE);
-            let _result = wheel.schedule(millis.to_string(), millis as u128);
+            let offset: u64 = rng.gen_range(1..=MAX_SIZE);
+            let _result = wheel.schedule(offset.to_string(), offset);
             // assert!(result.is_ok());
         }
 
