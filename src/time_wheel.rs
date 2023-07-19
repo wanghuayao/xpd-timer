@@ -1,9 +1,8 @@
 use std::{
-    borrow::BorrowMut,
     fmt::Debug,
     mem,
     sync::{
-        mpsc::{channel, Receiver, Sender},
+        mpsc::{channel, Receiver},
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
@@ -14,47 +13,24 @@ use crate::core::Wheel;
 use crate::{TimerError, TimerResult};
 
 pub struct Scheduler<T> {
-    // duration between two ticks(in nanos)
-    std_tick_interval: u128,
-    sender: Sender<T>,
-    wheel: Arc<Mutex<Wheel<T>>>,
     handler: JoinHandle<()>,
+    entities: Arc<Mutex<Vec<(T, SystemTime)>>>,
 }
 
 pub struct InnerScheduler<'a, T>(&'a Scheduler<T>, T);
 
 impl<'a, T: Debug> InnerScheduler<'a, T> {
     pub fn at(self, when: SystemTime) {
-        let now = SystemTime::now();
-        let after = if when > now {
-            when.duration_since(now).unwrap()
-        } else {
-            // 'when' is the past time
-            Duration::from_nanos(0)
-        };
-
-        self.after(after);
-    }
-    pub fn after(self, after: Duration) {
         let InnerScheduler(scheduler, entity) = self;
 
-        let after_in_nanos = after.as_nanos();
-        if after_in_nanos < scheduler.std_tick_interval {
-            scheduler
-                .sender
-                .send(entity)
-                .or_else(|err| Err(TimerError::SendError(err.to_string())))
-                .unwrap();
+        let mut entries = scheduler.entities.lock().unwrap();
 
-            return;
-        }
-
-        // TODO: u64 is ength?
-        let offset = (after.as_nanos() / scheduler.std_tick_interval) as u64;
-
-        let mut wheel = scheduler.wheel.lock().unwrap();
-        wheel.borrow_mut().schedule(entity, offset);
+        entries.push((entity, when));
         scheduler.handler.thread().unpark();
+    }
+
+    pub fn after(self, after: Duration) {
+        self.at(SystemTime::now() + after);
     }
 }
 
@@ -80,55 +56,66 @@ pub fn create_time_wheel<'a, T: Debug + Send + 'static>(
 ) -> (Scheduler<T>, TickReceiver<T>) {
     let (sender, receiver) = channel::<T>();
 
-    let wheel = Arc::new(Mutex::new(Wheel::new()));
+    // let wheel = Arc::new(Mutex::new(Wheel::new()));
+    let entities = Arc::new(Mutex::new(Vec::<(T, SystemTime)>::new()));
 
-    let std_tick_interval = interval.as_nanos();
+    let std_tick_interval = interval.as_nanos() as u64;
 
-    let wheel_send = Arc::clone(&wheel);
-    let sender_send = sender.clone(); // Clone the sender for the same channel
+    let entities_send = entities.clone();
 
     let handler = thread::spawn(move || {
+        let mut wheel = Wheel::<T>::new();
+
         let start_at = Instant::now();
         thread::sleep(interval);
 
         loop {
-            let mut wheel = wheel_send.lock().unwrap();
-
-            let mut need_tick_times = start_at.elapsed().as_nanos() / std_tick_interval;
-            while need_tick_times > wheel.tick_times as u128 {
-                let mut times = (need_tick_times - wheel.tick_times as u128) as u32;
-
-                while times > 0 {
-                    let real_times = wheel.tick(times, |item| {
-                        if let Err(err) = sender_send.send(item) {
-                            println!("Warning: {:?}", err);
-                        }
-                    });
-
-                    times -= real_times;
+            loop {
+                let real_ticks = wheel.ticks;
+                let should_ticks = start_at.elapsed().as_nanos() / std_tick_interval as u128;
+                if should_ticks <= real_ticks as u128 {
+                    break;
                 }
 
-                need_tick_times = start_at.elapsed().as_nanos() / std_tick_interval;
+                let times = (should_ticks - real_ticks as u128) as u32;
+                wheel.tick(times, |item| {
+                    if let Err(err) = sender.send(item) {
+                        println!("Warning: {:?}", err);
+                    }
+                });
             }
 
+            // resc
+            let mut entities = entities_send.lock().unwrap();
+            loop {
+                if let Some((entity, when)) = entities.pop() {
+                    let now = SystemTime::now();
+                    if when <= now {
+                        if let Err(err) = sender.send(entity) {
+                            println!("Warning: {:?}", err);
+                        }
+                    } else {
+                        let offset = (when.duration_since(now).unwrap().as_nanos()
+                            / std_tick_interval as u128)
+                            as u64;
+                        wheel.schedule(entity, offset)
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            // sleep
             let next_tick_times = wheel.next_tick_times();
-            let next_tick = std_tick_interval * next_tick_times as u128;
-            // let process_time = now.elapsed().as_nanos();
+            let next_tick = std_tick_interval * next_tick_times as u64;
+
+            mem::drop(entities);
             if next_tick > 0 {
-                let park_duration = Duration::from_nanos((next_tick) as u64);
-                mem::drop(wheel);
+                let park_duration = Duration::from_nanos(next_tick);
                 thread::park_timeout(park_duration);
             }
         }
     });
 
-    (
-        Scheduler {
-            sender,
-            wheel,
-            std_tick_interval,
-            handler,
-        },
-        TickReceiver(receiver),
-    )
+    (Scheduler { handler, entities }, TickReceiver(receiver))
 }

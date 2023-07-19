@@ -9,7 +9,7 @@ const LEVEL_COUNT: usize = 6;
 #[derive(Debug)]
 pub struct Wheel<T> {
     buckets: [Bucket<T>; LEVEL_COUNT],
-    pub(crate) tick_times: u64,
+    pub(crate) ticks: u64,
     homeless_item: Vec<T>,
 }
 
@@ -23,7 +23,7 @@ impl<T: Debug> Wheel<T> {
 
         Wheel {
             buckets: buckets.try_into().unwrap(),
-            tick_times: 0,
+            ticks: 0,
             homeless_item: vec![],
         }
     }
@@ -32,7 +32,7 @@ impl<T: Debug> Wheel<T> {
         if let Some(level) = to_level(offset) {
             let entity = Content {
                 data: entity,
-                tick_times: offset + self.tick_times,
+                tick_times: offset + self.ticks,
             };
             self.buckets[level].add(entity, offset as u64);
         } else {
@@ -40,52 +40,43 @@ impl<T: Debug> Wheel<T> {
         }
     }
 
-    pub(crate) fn tick<F>(&mut self, times: u32, notice: F) -> u32
+    pub(crate) fn tick<F>(&mut self, times: u32, notice: F)
     where
         F: Fn(T),
     {
-        let (result, tick_times, need_next_tick) = self.buckets[0].tick(times);
+        let (result, tick_times, is_need_tick_next_level) = self.buckets[0].tick(times);
 
         if let Some(entities) = result {
             for entity in entities {
-                #[cfg(debug_assertions)]
-                println!(
-                    "1notice........... at {},{:?}",
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis(),
-                    entity
-                );
                 notice(entity.data)
             }
         }
 
-        self.tick_times += tick_times as u64;
+        self.ticks += tick_times as u64;
 
-        if !need_next_tick {
-            return tick_times;
+        if is_need_tick_next_level {
+            self.tick_next_level(notice);
         }
+    }
 
+    pub(crate) fn next_tick_times(&self) -> u32 {
+        self.buckets[0].next_tick_times()
+    }
+
+    fn tick_next_level<F>(&mut self, notice: F)
+    where
+        F: Fn(T),
+    {
         for level in 1..LEVEL_COUNT {
-            let (result, _, need_next_tick) = self.buckets[level].tick(1);
+            let (result, _, is_need_tick_next_level) = self.buckets[level].tick(1);
 
             if let Some(entities) = result {
                 for entity in entities {
-                    if entity.tick_times <= self.tick_times as u64 {
-                        #[cfg(debug_assertions)]
-                        println!(
-                            "2notice........... at {},{:?}",
-                            SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap()
-                                .as_millis(),
-                            entity
-                        );
+                    if entity.tick_times <= self.ticks as u64 {
                         notice(entity.data);
                     } else {
                         // add to wheel agin
-                        let offset = entity.tick_times - self.tick_times;
+                        let offset = entity.tick_times - self.ticks;
                         let level = to_level(offset);
 
                         self.buckets[level.unwrap()].add(entity, offset);
@@ -93,16 +84,10 @@ impl<T: Debug> Wheel<T> {
                 }
             }
 
-            if !need_next_tick {
-                return tick_times;
+            if !is_need_tick_next_level {
+                break;
             }
         }
-
-        tick_times
-    }
-
-    pub(crate) fn next_tick_times(&self) -> u32 {
-        self.buckets[0].next_tick_times()
     }
 }
 
