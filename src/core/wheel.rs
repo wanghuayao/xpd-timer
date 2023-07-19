@@ -44,7 +44,7 @@ impl<T: Debug> Wheel<T> {
     where
         F: Fn(T),
     {
-        let (result, tick_times, is_need_tick_next_level) = self.buckets[0].tick(times);
+        let (result, real_ticks, is_need_tick_next_level) = self.buckets[0].tick(times);
 
         if let Some(entities) = result {
             for entity in entities {
@@ -52,10 +52,13 @@ impl<T: Debug> Wheel<T> {
             }
         }
 
-        self.ticks += tick_times as u64;
-
+        self.ticks += real_ticks as u64;
         if is_need_tick_next_level {
-            self.tick_next_level(notice);
+            self.tick_next_level(&notice);
+        }
+
+        if real_ticks < times {
+            self.tick(times - real_ticks, notice)
         }
     }
 
@@ -63,7 +66,7 @@ impl<T: Debug> Wheel<T> {
         self.buckets[0].next_tick_times()
     }
 
-    fn tick_next_level<F>(&mut self, notice: F)
+    fn tick_next_level<F>(&mut self, notice: &F)
     where
         F: Fn(T),
     {

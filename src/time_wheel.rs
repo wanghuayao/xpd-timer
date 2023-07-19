@@ -70,18 +70,14 @@ pub fn create_time_wheel<'a, T: Debug + Send + 'static>(
         thread::sleep(interval);
 
         loop {
-            loop {
-                let real_ticks = wheel.ticks;
-                let should_ticks = start_at.elapsed().as_nanos() / std_tick_interval as u128;
-                if should_ticks <= real_ticks as u128 {
-                    break;
-                }
+            let real_ticks = wheel.ticks;
+            let should_ticks = start_at.elapsed().as_nanos() / std_tick_interval as u128;
 
-                let times = (should_ticks - real_ticks as u128) as u32;
-                wheel.tick(times, |item| {
-                    if let Err(err) = sender.send(item) {
-                        println!("Warning: {:?}", err);
-                    }
+            if should_ticks > real_ticks as u128 {
+                wheel.tick((should_ticks - real_ticks as u128) as u32, |entity| {
+                    sender
+                        .send(entity)
+                        .expect("no reicver, stop running timer wheel");
                 });
             }
 
@@ -90,10 +86,10 @@ pub fn create_time_wheel<'a, T: Debug + Send + 'static>(
             loop {
                 if let Some((entity, when)) = entities.pop() {
                     let now = SystemTime::now();
-                    if when <= now {
-                        if let Err(err) = sender.send(entity) {
-                            println!("Warning: {:?}", err);
-                        }
+                    if when <= (now + interval) {
+                        sender
+                            .send(entity)
+                            .expect("no reicver, stop running timer wheel");
                     } else {
                         let offset = (when.duration_since(now).unwrap().as_nanos()
                             / std_tick_interval as u128)
