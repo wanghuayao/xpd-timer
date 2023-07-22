@@ -1,19 +1,10 @@
-use std::fmt::Debug;
-
 use super::slot::{Entity, Slot};
+use std::convert::TryInto;
+use std::fmt::Debug;
 
 /// Number of slots in a bucket
 pub(super) const SLOT_NUM: u32 = 64;
 
-macro_rules! iff {
-    ($condition:expr,$true_val:expr,$false_val:expr) => {
-        if $condition {
-            $true_val
-        } else {
-            $false_val
-        }
-    };
-}
 #[derive(Debug)]
 pub(crate) struct Bucket<T> {
     /// Tracking which slots currently contain entries.
@@ -37,15 +28,15 @@ impl<T: Debug> Bucket<T> {
 
         let step_size_in_bits = power * level;
 
-        let mut slots = Vec::<Slot<T>>::with_capacity(SLOT_NUM as usize);
-        for _ in 0..SLOT_NUM {
-            slots.push(Slot::<T>::new());
-        }
-
+        let slots = (0..SLOT_NUM)
+            .map(|_| Slot::<T>::new())
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
         Bucket {
             occupied: 0,
             cursor: 0,
-            slots: slots.try_into().unwrap(),
+            slots,
 
             // tick_times: 0,
             step_size_in_bits,
@@ -101,11 +92,11 @@ impl<T: Debug> Bucket<T> {
         // there is no entiry
         self.occupied = self.occupied >> 1;
 
-        let result = iff!(
-            is_empty,
-            None,
+        let result = if is_empty {
+            None
+        } else {
             self.slots[self.cursor as usize].items.take()
-        );
+        };
 
         // result, tick times, need tick next
         (result, empty_times + 1, self.cursor == 0)

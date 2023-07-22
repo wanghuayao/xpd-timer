@@ -69,7 +69,7 @@ pub fn time_wheel<'a, T: Debug + Send + 'static>(
         let notice = |entity| {
             sender
                 .send(entity)
-                .expect("no reicver, stop running timer wheel");
+                .expect("no receiver, stop running timer wheel");
         };
 
         loop {

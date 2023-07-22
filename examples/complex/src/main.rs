@@ -8,7 +8,7 @@ use xpd_timer::{time_wheel, TimerResult};
 
 // #[allow(unused)]
 fn main() -> TimerResult<()> {
-    let (scheduler, receiver) = time_wheel::<u128>(Duration::from_micros(1));
+    let (scheduler, receiver) = time_wheel::<u128>(Duration::from_micros(512));
 
     const TASK_CONT: u64 = 500;
 
@@ -39,6 +39,8 @@ fn main() -> TimerResult<()> {
         }
     });
 
+    let mut total_dis = 0u128;
+
     for i in 0..TASK_CONT {
         let result = receiver.recv()?;
 
@@ -48,12 +50,22 @@ fn main() -> TimerResult<()> {
             .as_micros();
 
         if result == now {
-            println!("{}\tequal\t{}\tmillis", i, (result - now) / 1000);
+            let dis = result - now;
+            total_dis += dis;
+            println!("{}\tequal\t{} unit ({} micros)", i, dis / 512, dis);
         } else if result < now {
-            println!("{}\tafter\t{}\tmillis", i, (now - result) / 1000);
+            let dis = now - result;
+            total_dis += dis;
+
+            println!("{}\tafter\t{} unit ({} micros)", i, dis / 512, dis);
         } else {
-            println!("{}\tbefor\t{}\tmillis", i, (result - now) / 1000);
+            let dis = result - now;
+            total_dis += dis;
+            println!("{}\tbefore\t{} unit ({} micros)", i, dis / 512, dis);
         }
     }
+
+    println!("avg: {}", total_dis / TASK_CONT as u128);
+
     Ok(())
 }

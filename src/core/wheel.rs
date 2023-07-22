@@ -1,5 +1,6 @@
 use super::{bucket::Bucket, slot::Entity};
 use std::{
+    convert::TryInto,
     fmt::Debug,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -15,14 +16,13 @@ pub struct Wheel<T> {
 
 impl<T: Debug> Wheel<T> {
     pub(crate) fn new() -> Self {
-        let mut buckets = Vec::with_capacity(LEVEL_COUNT);
-
-        for level in 0..LEVEL_COUNT {
-            buckets.push(Bucket::new(level as u32));
-        }
-
+        let buckets = (0..LEVEL_COUNT)
+            .map(|level| Bucket::new(level as u32))
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap();
         Wheel {
-            buckets: buckets.try_into().unwrap(),
+            buckets,
             ticks: 0,
             homeless: None,
         }
@@ -34,13 +34,9 @@ impl<T: Debug> Wheel<T> {
             tick_times: offset + self.ticks,
         };
 
-        if let Some(level) = to_level(offset) {
-            self.buckets[level].add(entity, offset as u64);
-        } else {
-            if self.homeless.is_none() {
-                self.homeless = Some(vec![])
-            }
-            self.homeless.as_mut().unwrap().push(entity);
+        match to_level(offset) {
+            Some(level) => self.buckets[level].add(entity, offset as u64),
+            _ => self.homeless.get_or_insert_with(Vec::new).push(entity),
         }
     }
 
@@ -50,13 +46,21 @@ impl<T: Debug> Wheel<T> {
     {
         let (result, real_ticks, is_need_tick_next_level) = self.buckets[0].tick(times);
 
+        self.ticks += real_ticks as u64;
+
         if let Some(entities) = result {
+            // entities.into_iter().for_each(|entity| {
+            //     if self.ticks != entity.tick_times {
+            //         dbg!(self.ticks, &entity);
+            //         debug_assert_eq!(self.ticks, entity.tick_times);
+            //     }
+            //     notice(entity.data);
+            // });
             for entity in entities {
                 notice(entity.data)
             }
         }
 
-        self.ticks += real_ticks as u64;
         if is_need_tick_next_level {
             self.tick_next_level(&notice);
         }
@@ -80,9 +84,10 @@ impl<T: Debug> Wheel<T> {
             if let Some(entities) = result {
                 for entity in entities {
                     if entity.tick_times <= self.ticks as u64 {
+                        dbg!(self.ticks, &entity);
                         notice(entity.data);
                     } else {
-                        // add to wheel agin
+                        // add to wheel again
                         let offset = entity.tick_times - self.ticks;
                         let level = to_level(offset);
 
@@ -92,10 +97,10 @@ impl<T: Debug> Wheel<T> {
             }
 
             if level == LEVEL_COUNT - 1 && self.homeless.is_some() {
-                // tick to last level, rerange homeless
-                let entitys = self.homeless.take().unwrap();
-                for entity in entitys {
-                    // add to wheel agin
+                // tick to last level, rearrange homeless
+                let entities = self.homeless.take().unwrap();
+                for entity in entities {
+                    // add to wheel again
                     let offset = entity.tick_times - self.ticks;
                     let level = to_level(offset);
                     self.buckets[level.unwrap()].add(entity, offset);
@@ -125,6 +130,16 @@ fn to_level(offset: u64) -> Option<usize> {
         t if t < SIZE_OF_LEVEL_5 => Some(5),
         _ => None,
     }
+
+    // const SIZE_OF_LEVEL: [u64; 6] = [
+    //     1 << (6 * 1),
+    //     1 << (6 * 2),
+    //     1 << (6 * 3),
+    //     1 << (6 * 4),
+    //     1 << (6 * 5),
+    //     1 << (6 * 6),
+    // ];
+    // SIZE_OF_LEVEL.iter().position(|&x| offset < x)
 }
 
 fn _current_millis() -> u128 {
@@ -135,13 +150,14 @@ fn _current_millis() -> u128 {
     since_the_epoch.as_millis()
 }
 
+#[cfg(test)]
 mod tests {
+    use super::*;
+    use rand::Rng;
     use std::sync::mpsc::channel;
 
     #[test]
     fn new_test_random() {
-        use super::*;
-        use rand::Rng;
         let mut rng = rand::thread_rng();
 
         const MAX_SIZE: u64 = 500;
@@ -167,11 +183,9 @@ mod tests {
         // assert_eq!(real_item_count, ITEM_COUNT);
     }
 
-    // this case will run 100s
-    // #[test]
-    #[allow(dead_code)]
+    #[test]
+    #[ignore] // this test fn will spend 100 seconds
     fn homeless_test() {
-        use super::*;
         let mut wheel = Wheel::<String>::new();
 
         let notice = |e| panic!("notice {}", e);

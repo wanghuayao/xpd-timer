@@ -14,11 +14,13 @@ impl<T> Slot<T> {
         Slot { items: None }
     }
     pub(crate) fn push(&mut self, item: Entity<T>) {
-        if self.items.is_none() {
-            self.items = Option::Some(vec![]);
-        }
+        self.items.get_or_insert_with(Vec::new).push(item);
 
-        self.items.as_mut().unwrap().push(item);
+        // if self.items.is_none() {
+        //     self.items = Option::Some(vec![]);
+        // }
+
+        // self.items.as_mut().unwrap().push(item);
     }
 }
 
