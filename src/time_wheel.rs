@@ -56,11 +56,8 @@ pub fn create_time_wheel<'a, T: Debug + Send + 'static>(
 ) -> (Scheduler<T>, TickReceiver<T>) {
     let (sender, receiver) = channel::<T>();
 
-    // let wheel = Arc::new(Mutex::new(Wheel::new()));
     let entities = Arc::new(Mutex::new(Vec::<(T, SystemTime)>::new()));
-
     let std_tick_interval = interval.as_nanos() as u64;
-
     let entities_send = entities.clone();
 
     let handler = thread::spawn(move || {
@@ -83,33 +80,23 @@ pub fn create_time_wheel<'a, T: Debug + Send + 'static>(
 
             // resc
             let mut entities = entities_send.lock().unwrap();
-            loop {
-                if let Some((entity, when)) = entities.pop() {
-                    let now = SystemTime::now();
-                    if when <= (now + interval) {
-                        sender
-                            .send(entity)
-                            .expect("no reicver, stop running timer wheel");
-                    } else {
-                        let offset = (when.duration_since(now).unwrap().as_nanos()
-                            / std_tick_interval as u128)
-                            as u64;
-                        wheel.schedule(entity, offset)
-                    }
+            while let Some((entity, when)) = entities.pop() {
+                let now = SystemTime::now();
+                if when <= (now + interval) {
+                    sender
+                        .send(entity)
+                        .expect("no reicver, stop running timer wheel");
                 } else {
-                    break;
+                    let offset = (when.duration_since(now).unwrap().as_nanos()
+                        / std_tick_interval as u128) as u64;
+                    wheel.schedule(entity, offset)
                 }
             }
-
-            // sleep
-            let next_tick_times = wheel.next_tick_times();
-            let next_tick = std_tick_interval * next_tick_times as u64;
-
             mem::drop(entities);
-            if next_tick > 0 {
-                let park_duration = Duration::from_nanos(next_tick);
-                thread::park_timeout(park_duration);
-            }
+
+            // park
+            let next_tick = std_tick_interval * wheel.next_tick_times() as u64;
+            thread::park_timeout(Duration::from_nanos(next_tick));
         }
     });
 
