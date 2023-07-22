@@ -1,10 +1,10 @@
 use std::time::{Duration, Instant};
 
-use xpd_timer::{create_time_wheel, TimerResult};
+use xpd_timer::{time_wheel, TimerResult};
 
 #[allow(unused)]
 fn main() -> TimerResult<()> {
-    let (scheduler, receiver) = create_time_wheel::<String>(Duration::from_millis(1));
+    let (scheduler, receiver) = time_wheel::<String>(Duration::from_millis(1));
 
     let entity = "test".into();
 

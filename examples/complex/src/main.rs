@@ -4,11 +4,11 @@ use std::{
 };
 
 use rand::Rng;
-use xpd_timer::{create_time_wheel, TimerResult};
+use xpd_timer::{time_wheel, TimerResult};
 
 // #[allow(unused)]
 fn main() -> TimerResult<()> {
-    let (scheduler, receiver) = create_time_wheel::<u128>(Duration::from_micros(1));
+    let (scheduler, receiver) = time_wheel::<u128>(Duration::from_micros(1));
 
     const TASK_CONT: u64 = 500;
 

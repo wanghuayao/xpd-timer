@@ -51,7 +51,7 @@ impl<T> TickReceiver<T> {
     }
 }
 
-pub fn create_time_wheel<'a, T: Debug + Send + 'static>(
+pub fn time_wheel<'a, T: Debug + Send + 'static>(
     interval: Duration,
 ) -> (Scheduler<T>, TickReceiver<T>) {
     let (sender, receiver) = channel::<T>();
