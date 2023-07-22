@@ -1,4 +1,4 @@
-use super::{bucket::Bucket, slot::Content};
+use super::{bucket::Bucket, slot::Entity};
 use std::{
     fmt::Debug,
     time::{SystemTime, UNIX_EPOCH},
@@ -10,7 +10,7 @@ const LEVEL_COUNT: usize = 6;
 pub struct Wheel<T> {
     buckets: [Bucket<T>; LEVEL_COUNT],
     pub(crate) ticks: u64,
-    homeless_item: Vec<T>,
+    homeless: Option<Vec<Entity<T>>>,
 }
 
 impl<T: Debug> Wheel<T> {
@@ -24,19 +24,23 @@ impl<T: Debug> Wheel<T> {
         Wheel {
             buckets: buckets.try_into().unwrap(),
             ticks: 0,
-            homeless_item: vec![],
+            homeless: None,
         }
     }
 
     pub(crate) fn schedule(&mut self, entity: T, offset: u64) {
+        let entity = Entity {
+            data: entity,
+            tick_times: offset + self.ticks,
+        };
+
         if let Some(level) = to_level(offset) {
-            let entity = Content {
-                data: entity,
-                tick_times: offset + self.ticks,
-            };
             self.buckets[level].add(entity, offset as u64);
         } else {
-            self.homeless_item.push(entity);
+            if self.homeless.is_none() {
+                self.homeless = Some(vec![])
+            }
+            self.homeless.as_mut().unwrap().push(entity);
         }
     }
 
@@ -87,6 +91,17 @@ impl<T: Debug> Wheel<T> {
                 }
             }
 
+            if level == LEVEL_COUNT - 1 && self.homeless.is_some() {
+                // tick to last level, rerange homeless
+                let entitys = self.homeless.take().unwrap();
+                for entity in entitys {
+                    // add to wheel agin
+                    let offset = entity.tick_times - self.ticks;
+                    let level = to_level(offset);
+                    self.buckets[level.unwrap()].add(entity, offset);
+                }
+            }
+
             if !is_need_tick_next_level {
                 break;
             }
@@ -121,6 +136,7 @@ fn _current_millis() -> u128 {
 }
 
 mod tests {
+    use std::sync::mpsc::channel;
 
     #[test]
     fn new_test_random() {
@@ -149,5 +165,54 @@ mod tests {
             });
         }
         // assert_eq!(real_item_count, ITEM_COUNT);
+    }
+
+    // this case will run 100s
+    // #[test]
+    #[allow(dead_code)]
+    fn homeless_test() {
+        use super::*;
+        let mut wheel = Wheel::<String>::new();
+
+        let notice = |e| panic!("notice {}", e);
+
+        wheel.tick(1, notice);
+        wheel.tick(1, notice);
+
+        let max_size = 1 << (6 * 6);
+        wheel.schedule("max_offset - 1".into(), max_size - 1);
+        wheel.schedule("max_offset".into(), max_size);
+        wheel.schedule("max_offset + 1".into(), max_size + 1);
+
+        let empty_times = wheel.ticks + max_size - 2;
+        loop {
+            wheel.tick(64, notice);
+            if wheel.ticks >= empty_times - 64 {
+                break;
+            }
+        }
+        loop {
+            wheel.tick(1, notice);
+            if wheel.ticks >= empty_times {
+                break;
+            }
+        }
+
+        let (tx, rx) = channel::<()>();
+        wheel.tick(1, |e| {
+            tx.send(()).unwrap();
+            assert_eq!(e, "max_offset - 1");
+        });
+        wheel.tick(1, |e| {
+            tx.send(()).unwrap();
+            assert_eq!(e, "max_offset");
+        });
+        wheel.tick(1, |e| {
+            tx.send(()).unwrap();
+            assert_eq!(e, "max_offset + 1");
+        });
+        assert!(rx.try_recv().is_ok());
+        assert!(rx.try_recv().is_ok());
+        assert!(rx.try_recv().is_ok());
     }
 }

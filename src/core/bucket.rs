@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use super::slot::{Content, Slot};
+use super::slot::{Entity, Slot};
 
 /// Number of slots in a bucket
 pub(super) const SLOT_NUM: u32 = 64;
@@ -53,7 +53,7 @@ impl<T: Debug> Bucket<T> {
         }
     }
 
-    pub fn add(&mut self, entity: Content<T>, offset: u64) {
+    pub fn add(&mut self, entity: Entity<T>, offset: u64) {
         debug_assert!(offset > 0, "tick times is not allow zero");
 
         // TODO: there will be panic, tick_times小于1了
@@ -70,27 +70,8 @@ impl<T: Debug> Bucket<T> {
         self.slots[slot_index_from_cur as usize].push(entity);
     }
 
-    // /// tick
-    // /// return
-    // pub fn tick_one(&mut self) -> (Option<Vec<Content<T>>>, u64, bool) {
-    //     self.tick_times += 1;
-    //     self.cursor = (self.tick_times % SLOT_NUM as u64) as u32;
-    //     let is_empty = (self.occupied & 1) == 1;
-    //     // there is no entiry
-    //     self.occupied = self.occupied >> 1;
-
-    //     let result = if is_empty {
-    //         None
-    //     } else {
-    //         self.slots[self.cursor as usize].items.take()
-    //     };
-
-    //     // result, tick times, need tick next
-    //     (result, 1, self.cursor == 0)
-    // }
-
     /// tick
-    pub fn tick(&mut self, times: u32) -> (Option<Vec<Content<T>>>, u32, bool) {
+    pub fn tick(&mut self, times: u32) -> (Option<Vec<Entity<T>>>, u32, bool) {
         // distance from  start
         let tick_times = times.min(SLOT_NUM - self.cursor);
 
@@ -146,13 +127,13 @@ mod tests {
 
     macro_rules! content {
         ($item:expr) => {
-            Content {
+            Entity {
                 data: $item,
                 tick_times: $item,
             }
         };
         ($item:expr, $times: expr) => {
-            Content {
+            Entity {
                 data: $item,
                 tick_times: $times,
             }
