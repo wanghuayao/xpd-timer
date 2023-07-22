@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use xpd_timer::{create_time_wheel, TimerResult};
 
@@ -7,11 +7,15 @@ fn main() -> TimerResult<()> {
     let (scheduler, receiver) = create_time_wheel::<String>(Duration::from_millis(1));
 
     let entity = "test".into();
+
+    let start = Instant::now();
     scheduler.arrange(entity).after(Duration::from_secs(5));
-
     let result = receiver.recv()?;
-
-    println!("recived [{}]", result,);
+    println!(
+        "after {} millis recived [{}].",
+        start.elapsed().as_millis(),
+        result,
+    );
 
     Ok(())
 }
