@@ -1,13 +1,12 @@
 use std::{
     fmt::Debug,
     mem,
-    sync::{
-        mpsc::{channel, Receiver},
-        Arc, Mutex,
-    },
+    sync::{Arc, Mutex},
     thread::{self, JoinHandle},
     time::{Duration, Instant, SystemTime},
 };
+
+use crossbeam_channel::Receiver;
 
 use crate::core::Wheel;
 use crate::{TimerError, TimerResult};
@@ -19,7 +18,7 @@ pub struct Scheduler<T> {
 
 pub struct InnerScheduler<'a, T>(&'a Scheduler<T>, T);
 
-impl<'a, T: Debug> InnerScheduler<'a, T> {
+impl<'a, T> InnerScheduler<'a, T> {
     pub fn at(self, when: SystemTime) {
         let InnerScheduler(scheduler, entity) = self;
 
@@ -34,7 +33,7 @@ impl<'a, T: Debug> InnerScheduler<'a, T> {
     }
 }
 
-impl<T: Debug> Scheduler<T> {
+impl<T> Scheduler<T> {
     pub fn arrange(&self, entity: T) -> InnerScheduler<T> {
         return InnerScheduler(self, entity);
     }
@@ -54,7 +53,9 @@ impl<T> TickReceiver<T> {
 pub fn time_wheel<'a, T: Debug + Send + 'static>(
     interval: Duration,
 ) -> (Scheduler<T>, TickReceiver<T>) {
-    let (sender, receiver) = channel::<T>();
+    // let (sender, receiver) = channel::<T>();
+
+    let (sender, receiver) = crossbeam_channel::unbounded();
 
     let entities = Arc::new(Mutex::new(Vec::<(T, SystemTime)>::new()));
     let interval_in_nanos = interval.as_nanos() as u64;

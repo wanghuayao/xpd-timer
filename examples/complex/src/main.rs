@@ -6,9 +6,16 @@ use std::{
 use rand::Rng;
 use xpd_timer::{time_wheel, TimerResult};
 
+#[derive(Debug)]
+struct Entity {
+    when_in_micros: u128,
+    span: u64,
+}
+
 // #[allow(unused)]
 fn main() -> TimerResult<()> {
-    let (scheduler, receiver) = time_wheel::<u128>(Duration::from_micros(512));
+    const UNIT: u64 = 1000;
+    let (scheduler, receiver) = time_wheel::<Entity>(Duration::from_micros(UNIT));
 
     const TASK_CONT: u64 = 500;
 
@@ -24,10 +31,15 @@ fn main() -> TimerResult<()> {
 
             let when = SystemTime::now() + duration;
 
-            let entity = when
+            let when_in_micros = when
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap()
                 .as_micros();
+
+            let entity = Entity {
+                when_in_micros,
+                span: (millis * 1000) / UNIT,
+            };
 
             if rng.gen_range(100..=2000) % 2 == 0 {
                 scheduler.arrange(entity).at(when);
@@ -42,26 +54,41 @@ fn main() -> TimerResult<()> {
     let mut total_dis = 0u128;
 
     for i in 0..TASK_CONT {
-        let result = receiver.recv()?;
+        let Entity {
+            when_in_micros,
+            span,
+        } = receiver.recv()?;
 
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_micros();
 
-        if result == now {
-            let dis = result - now;
-            total_dis += dis;
-            println!("{}\tequal\t{} unit ({} micros)", i, dis / 512, dis);
-        } else if result < now {
-            let dis = now - result;
+        if when_in_micros == now {
+            // let dis = when_in_micros - now;
+            // total_dis += dis;
+            // println!("{}\tequal\t{} unit ({} micros)", i, dis / UNIT as u128, dis);
+        } else if when_in_micros < now {
+            let dis = now - when_in_micros;
             total_dis += dis;
 
-            println!("{}\tafter\t{} unit ({} micros)", i, dis / 512, dis);
+            println!(
+                "{}\tafter\t{} unit ({} micros), span:{}",
+                i,
+                dis / UNIT as u128,
+                dis,
+                span
+            );
         } else {
-            let dis = result - now;
+            let dis = when_in_micros - now;
             total_dis += dis;
-            println!("{}\tbefore\t{} unit ({} micros)", i, dis / 512, dis);
+            println!(
+                "{}\tbefore\t{} unit ({} micros), span:{}",
+                i,
+                dis / UNIT as u128,
+                dis,
+                span
+            );
         }
     }
 

@@ -1,3 +1,5 @@
+use timed::timed;
+
 use super::{bucket::Bucket, slot::Entity};
 use std::{
     convert::TryInto,
@@ -28,6 +30,7 @@ impl<T: Debug> Wheel<T> {
         }
     }
 
+    #[timed]
     pub(crate) fn schedule(&mut self, entity: T, offset: u64) {
         let entity = Entity {
             data: entity,
@@ -40,6 +43,7 @@ impl<T: Debug> Wheel<T> {
         }
     }
 
+    #[timed]
     pub(crate) fn tick<F>(&mut self, times: u32, notice: F)
     where
         F: Fn(T),
@@ -49,16 +53,7 @@ impl<T: Debug> Wheel<T> {
         self.ticks += real_ticks as u64;
 
         if let Some(entities) = result {
-            // entities.into_iter().for_each(|entity| {
-            //     if self.ticks != entity.tick_times {
-            //         dbg!(self.ticks, &entity);
-            //         debug_assert_eq!(self.ticks, entity.tick_times);
-            //     }
-            //     notice(entity.data);
-            // });
-            for entity in entities {
-                notice(entity.data)
-            }
+            entities.into_iter().for_each(|entity| notice(entity.data));
         }
 
         if is_need_tick_next_level {
@@ -84,7 +79,6 @@ impl<T: Debug> Wheel<T> {
             if let Some(entities) = result {
                 for entity in entities {
                     if entity.tick_times <= self.ticks as u64 {
-                        dbg!(self.ticks, &entity);
                         notice(entity.data);
                     } else {
                         // add to wheel again
