@@ -102,12 +102,13 @@ impl<T: Debug> Bucket<T> {
         (result, empty_times + 1, self.cursor == 0)
     }
 
-    pub(crate) fn next_tick_times(&self) -> u32 {
+    /// get the non-stop ticks
+    /// attation: this will return 0
+    pub(crate) fn non_stop_ticks(&self) -> u32 {
         let distance_to_zero = SLOT_NUM - self.cursor;
+        let next_entity_pos = self.occupied.trailing_zeros();
 
-        let next_entity_pos = self.occupied.trailing_zeros() + 1;
-
-        distance_to_zero.min(next_entity_pos)
+        (distance_to_zero.min(next_entity_pos)) << self.step_size_in_bits
     }
 }
 
@@ -231,21 +232,20 @@ mod tests {
     }
 
     #[test]
-    fn test_next_tick_interval() {
+    fn test_non_stop_ticks() {
         let mut bucket = Bucket::<u64>::new(0);
-        assert_eq!(bucket.next_tick_times(), SLOT_NUM);
+        assert_eq!(bucket.non_stop_ticks(), SLOT_NUM);
 
         bucket.add(content!(1), 1);
-        assert_eq!(bucket.next_tick_times(), 1);
+        assert_eq!(bucket.non_stop_ticks(), 0);
 
         bucket.tick(1);
-        assert_eq!(bucket.next_tick_times(), SLOT_NUM - 1);
+        assert_eq!(bucket.non_stop_ticks(), SLOT_NUM - 1);
 
         bucket.tick(10);
-        assert_eq!(bucket.next_tick_times(), SLOT_NUM - 1 - 10);
+        assert_eq!(bucket.non_stop_ticks(), SLOT_NUM - 1 - 10);
 
         bucket.add(content!((SLOT_NUM - 1) as u64), (SLOT_NUM - 1) as u64);
-
-        assert_eq!(bucket.next_tick_times(), SLOT_NUM - 1 - 10);
+        assert_eq!(bucket.non_stop_ticks(), SLOT_NUM - 1 - 10);
     }
 }

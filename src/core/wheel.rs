@@ -65,8 +65,15 @@ impl<T: Debug> Wheel<T> {
         }
     }
 
-    pub(crate) fn next_tick_times(&self) -> u32 {
-        self.buckets[0].next_tick_times()
+    pub(crate) fn next_ticks(&self) -> u32 {
+        let l0_non_stop_ticks = self.buckets[0].non_stop_ticks();
+        if l0_non_stop_ticks == 64 {
+            let l1_non_stop_ticks = self.buckets[1].non_stop_ticks();
+
+            return l0_non_stop_ticks.max(l1_non_stop_ticks);
+        }
+
+        1.max(l0_non_stop_ticks)
     }
 
     fn tick_next_level<F>(&mut self, notice: &F)
@@ -175,6 +182,20 @@ mod tests {
             });
         }
         // assert_eq!(real_item_count, ITEM_COUNT);
+    }
+
+    #[test]
+    fn test_next_ticks() {
+        let mut wheel = Wheel::<u32>::new();
+
+        wheel.schedule(1, (64 * 64) + 1);
+        assert_eq!(wheel.next_ticks(), (64 * 64));
+
+        wheel.schedule(1, (64 * 64));
+        assert_eq!(wheel.next_ticks(), (64 * 64));
+
+        wheel.schedule(1, (64 * 64) - 1);
+        assert_eq!(wheel.next_ticks(), (64 * (64 - 2)));
     }
 
     #[test]

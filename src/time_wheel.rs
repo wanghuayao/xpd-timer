@@ -96,7 +96,7 @@ pub fn time_wheel<'a, T: Debug + Send + 'static>(
             mem::drop(entities);
 
             // park
-            let next_tick = interval_in_nanos * wheel.next_tick_times() as u64;
+            let next_tick = interval_in_nanos * wheel.next_ticks() as u64;
             thread::park_timeout(Duration::from_nanos(next_tick));
         }
     });
