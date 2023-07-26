@@ -62,23 +62,25 @@ pub fn time_wheel<'a, T: Debug + Send + 'static>(
     let entities_send = entities.clone();
 
     let handler = thread::spawn(move || {
-        let mut wheel = Wheel::<T>::new();
-
-        let start_at = Instant::now();
-        thread::sleep(interval);
-
-        let notice = |entity| {
+        let notice = move |entity| {
             sender
                 .send(entity)
                 .expect("no receiver, stop running timer wheel");
         };
+
+        let notice_copy = notice.clone();
+
+        let mut wheel = Wheel::<T>::new(notice);
+
+        let start_at = Instant::now();
+        thread::sleep(interval);
 
         loop {
             let real_ticks = wheel.ticks as u128;
             let should_ticks = start_at.elapsed().as_nanos() / interval_in_nanos as u128;
 
             if should_ticks > real_ticks {
-                wheel.tick((should_ticks - real_ticks) as u32, notice);
+                wheel.tick((should_ticks - real_ticks) as u32);
             }
 
             // resc
@@ -86,7 +88,7 @@ pub fn time_wheel<'a, T: Debug + Send + 'static>(
             while let Some((entity, when)) = entities.pop() {
                 let now = SystemTime::now();
                 if when < (now + interval) {
-                    notice(entity);
+                    notice_copy(entity);
                 } else {
                     let offset = (when.duration_since(now).unwrap().as_nanos()
                         / interval_in_nanos as u128) as u64;
