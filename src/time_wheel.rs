@@ -72,12 +72,13 @@ pub fn time_wheel<'a, T: Debug + Send + 'static>(
 
         let mut wheel = Wheel::<T>::new(notice);
 
-        let start_at = Instant::now();
+        let start = Instant::now();
+        let start_at = SystemTime::now();
         thread::sleep(interval);
 
         loop {
             let real_ticks = wheel.ticks as u128;
-            let should_ticks = start_at.elapsed().as_nanos() / interval_in_nanos as u128;
+            let should_ticks = start.elapsed().as_nanos() / interval_in_nanos as u128;
 
             let one_loop_start = Instant::now();
 
@@ -88,26 +89,41 @@ pub fn time_wheel<'a, T: Debug + Send + 'static>(
             // resc
             let mut entities = entities_send.lock().unwrap();
             while let Some((entity, when)) = entities.pop() {
-                let now = SystemTime::now();
-                if when < (now + interval) {
-                    notice_copy(entity);
-                } else {
-                    let offset = (when.duration_since(now).unwrap().as_nanos()
+                if when > start_at {
+                    let offset = ((when.duration_since(start_at).unwrap().as_nanos()
+                        - start.elapsed().as_nanos())
                         / interval_in_nanos as u128) as u64;
 
-                    wheel.schedule(entity, offset)
+                    wheel.schedule(entity, offset, when);
+                } else {
+                    notice_copy(entity);
                 }
+
+                // let now = SystemTime::now();
+                // if when < (now + interval) {
+                //     notice_copy(entity);
+                // } else {
+                //     let offset = (when.duration_since(now).unwrap().as_nanos()
+                //         / interval_in_nanos as u128) as u64;
+
+                //     wheel.schedule(entity, offset)
+                // }
             }
             mem::drop(entities);
 
             // park
             let next_ticks = wheel.next_ticks();
 
-            let next_tick = interval_in_nanos * next_ticks as u64;
+            let next_tick_time = interval_in_nanos * next_ticks as u64;
             let process_time = one_loop_start.elapsed().as_nanos() as u64;
 
-            if next_tick > process_time {
-                thread::park_timeout(Duration::from_nanos(next_tick - process_time));
+            println!(
+                "next_ticks:{}, next_tick_time,{}, process_time:{}",
+                next_ticks, next_tick_time, process_time
+            );
+
+            if next_tick_time > process_time {
+                thread::park_timeout(Duration::from_nanos(next_tick_time - process_time));
             }
         }
     });

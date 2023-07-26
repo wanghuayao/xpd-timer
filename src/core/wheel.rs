@@ -13,7 +13,7 @@ pub struct Wheel<T> {
     buckets: [Bucket<T>; LEVEL_COUNT],
     pub(crate) ticks: u64,
     homeless: Option<Vec<Entity<T>>>,
-    notice: Box<dyn Fn(T)>,
+    _notice: Box<dyn Fn(T)>,
 }
 
 impl<T: Debug> Wheel<T> {
@@ -27,15 +27,39 @@ impl<T: Debug> Wheel<T> {
             buckets,
             ticks: 0,
             homeless: None,
-            notice: Box::new(notice),
+            _notice: Box::new(notice),
         }
     }
 
+    fn notice(&self, entity: Entity<T>) {
+        let now = SystemTime::now();
+        let when = entity.when;
+
+        let mut dis = 0u128;
+        if when > now {
+            dis = when.duration_since(now).unwrap().as_micros();
+        } else {
+            dis = now.duration_since(when).unwrap().as_micros();
+        }
+
+        println!(
+            "notice entity ticks: {}, system ticks:{}, time diff: {}, add offset:{}, ticks:{}",
+            entity.tick_times, self.ticks, dis, entity.offset, entity.ticks
+        );
+
+        assert!(self.ticks >= entity.tick_times);
+
+        (self._notice)(entity.data);
+    }
+
     #[timed]
-    pub(crate) fn schedule(&mut self, entity: T, offset: u64) {
+    pub(crate) fn schedule(&mut self, entity: T, offset: u64, when: SystemTime) {
         let entity = Entity {
             data: entity,
             tick_times: offset + self.ticks,
+            when,
+            offset: offset,
+            ticks: self.ticks,
         };
 
         match to_level(offset) {
@@ -46,6 +70,8 @@ impl<T: Debug> Wheel<T> {
 
     #[timed]
     pub(crate) fn tick_to(&mut self, ticks: u64) {
+        println!("tick_to:{}", ticks);
+
         if ticks <= self.ticks {
             return;
         }
@@ -56,9 +82,10 @@ impl<T: Debug> Wheel<T> {
         // tick first layer
         let (result, next_level_tick_times) = self.buckets[0].tick(times as u32);
         if let Some(entities) = result {
-            entities
-                .into_iter()
-                .for_each(|entity| (self.notice)(entity.data));
+            entities.into_iter().for_each(
+                //                    |entity| (self.notice)(entity.data)
+                |entity| self.notice(entity),
+            );
         }
 
         let mut next_level_ticks = next_level_tick_times;
@@ -69,7 +96,8 @@ impl<T: Debug> Wheel<T> {
             if let Some(entities) = result {
                 for entity in entities {
                     if entity.tick_times <= ticks as u64 {
-                        (self.notice)(entity.data);
+                        // (self.notice)(entity.data);
+                        self.notice(entity);
                     } else {
                         // add to wheel again
                         let offset = entity.tick_times - ticks;
@@ -159,7 +187,7 @@ mod tests {
         const ITEM_COUNT: u64 = 200;
         for _ in 0..ITEM_COUNT {
             let offset: u64 = rng.gen_range(1..=MAX_SIZE);
-            let _result = wheel.schedule(offset.to_string(), offset);
+            let _result = wheel.schedule(offset.to_string(), offset, SystemTime::now());
             // assert!(result.is_ok());
         }
 
@@ -179,14 +207,45 @@ mod tests {
     fn test_next_ticks() {
         let mut wheel = Wheel::<u32>::new(|_| {});
 
-        wheel.schedule(1, (64 * 64) + 1);
+        wheel.schedule(1, (64 * 64) + 1, SystemTime::now());
         assert_eq!(wheel.next_ticks(), (64 * 64));
 
-        wheel.schedule(1, (64 * 64));
+        wheel.schedule(1, (64 * 64), SystemTime::now());
         assert_eq!(wheel.next_ticks(), (64 * 64));
 
-        wheel.schedule(1, (64 * 64) - 1);
+        wheel.schedule(1, (64 * 64) - 1, SystemTime::now());
         assert_eq!(wheel.next_ticks(), (64 * (64 - 2)));
+    }
+
+    #[test]
+    fn test_whoflow() {
+        // notice entity ticks: 543089, system ticks:543090, time diff: 224, add offset:2273, ticks:540816
+        // notice entity ticks: 543103, system ticks:543090, time diff: 6865, add offset:8037, ticks:535066
+
+        let mut wheel = Wheel::<u64>::new(|entity| println!("recive: {}", entity));
+        wheel.tick_to(535066);
+        assert_eq!(wheel.ticks, 535066);
+
+        wheel.schedule(1, 8037, SystemTime::now());
+
+        let mut ticks = wheel.ticks + wheel.next_ticks() as u64;
+        while ticks < 540816 {
+            wheel.tick_to(ticks);
+            ticks = wheel.ticks + wheel.next_ticks() as u64;
+        }
+
+        wheel.tick_to(540816);
+        wheel.schedule(2, 2273, SystemTime::now());
+
+        while ticks < 543090 {
+            wheel.tick_to(ticks);
+            ticks = wheel.ticks + wheel.next_ticks() as u64;
+        }
+
+        wheel.tick_to(543090);
+        wheel.tick_to(wheel.ticks + wheel.next_ticks() as u64);
+
+        wheel.tick_to(543103);
     }
 
     #[test]

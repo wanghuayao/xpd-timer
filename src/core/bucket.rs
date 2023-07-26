@@ -115,12 +115,16 @@ impl<T: Debug> Bucket<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::SystemTime;
 
     macro_rules! content {
         ($item:expr) => {
             Entity {
                 data: $item,
                 tick_times: $item,
+                when: SystemTime::now(),
+                offset: 0,
+                ticks: 0,
             }
         };
         ($item:expr, $times: expr) => {
@@ -136,7 +140,6 @@ mod tests {
         let bucket = Bucket::<i64>::new(0);
         assert_eq!(bucket.occupied, 0);
         assert_eq!(bucket.cursor, 0);
-        // assert_eq!(bucket.tick_times, 0);
         assert_eq!(bucket.step_size_in_bits, 0);
         assert_eq!(bucket._level, 0);
         assert_eq!(bucket.slots.len(), 64);

@@ -1,7 +1,12 @@
+use std::time::SystemTime;
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Entity<T> {
     pub data: T,
     pub(crate) tick_times: u64,
+    pub(crate) when: SystemTime,
+    pub(crate) ticks: u64,
+    pub(crate) offset: u64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
