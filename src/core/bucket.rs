@@ -61,45 +61,44 @@ impl<T: Debug> Bucket<T> {
         self.slots[slot_index_from_cur as usize].push(entity);
     }
 
-    /// tick
-    pub fn tick(&mut self, times: u32) -> (Option<Vec<Entity<T>>>, u32, bool) {
-        // distance from  start
-        let tick_times = times.min(SLOT_NUM - self.cursor);
+    /// tick (result, next level tick times)
+    pub fn tick(&mut self, times: u32) -> (Option<Vec<Entity<T>>>, u32) {
+        let mut entities = Option::<Vec<Entity<T>>>::None;
 
-        let empty_times = tick_times.min(self.occupied.trailing_zeros());
+        let next_level_tick_times = (times + self.cursor) / SLOT_NUM;
 
-        if empty_times > 0 {
-            // there no Entity, only move cursor
-            // self.tick_times += empty_times as u64;
-            self.cursor = ((self.cursor + empty_times) % SLOT_NUM) as u32;
-            self.occupied = if empty_times < SLOT_NUM {
-                self.occupied >> empty_times
-            } else {
-                0
-            };
+        // has some things
+        let mut left_times = times;
 
-            let is_back = self.cursor == 0;
-            if times == empty_times || is_back {
-                // return parent for tick next level
-                return (None, empty_times, is_back);
+        if self.occupied > 0 && times > self.occupied.trailing_zeros() {
+            let mut temp_entities = Vec::<Entity<T>>::new();
+
+            while left_times > 0 && self.occupied > 0 {
+                let non_empty_index = self.occupied.trailing_zeros();
+                let tick_times = non_empty_index + 1;
+
+                self.cursor = (self.cursor + tick_times) % SLOT_NUM;
+                if let Some(timeout_entities) = self.slots[self.cursor as usize].items.take() {
+                    temp_entities.extend(timeout_entities);
+                }
+
+                left_times -= tick_times;
+                self.occupied = self.occupied >> tick_times;
             }
+
+            entities = Some(temp_entities);
         }
-
-        // tick one time
-        // self.tick_times += 1;
-        self.cursor = ((self.cursor + 1) % SLOT_NUM) as u32;
-        let is_empty = (self.occupied & 1) == 0;
-        // there is no entiry
-        self.occupied = self.occupied >> 1;
-
-        let result = if is_empty {
-            None
+        self.occupied = if left_times >= SLOT_NUM {
+            0
         } else {
-            self.slots[self.cursor as usize].items.take()
+            self.occupied >> left_times
         };
+        self.cursor = (self.cursor + left_times) % SLOT_NUM;
 
-        // result, tick times, need tick next
-        (result, empty_times + 1, self.cursor == 0)
+        // let new_cursor = self.cursor + times;
+        // self.cursor = (new_cursor % SLOT_NUM) as u32;
+
+        return (entities, next_level_tick_times);
     }
 
     /// get the non-stop ticks
@@ -187,47 +186,41 @@ mod tests {
         bucket.add(content!(5), 5);
         assert_eq!(bucket.occupied, 0b0001_0001);
 
-        let (result, tick_times, need_tick_next) = bucket.tick(1);
+        let (result, next_tick_times) = bucket.tick(1);
         let result = result.unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].data, 1);
-        assert_eq!(tick_times, 1);
-        assert_eq!(need_tick_next, false);
+        assert_eq!(next_tick_times, 0);
         assert_eq!(bucket.cursor, 1);
         assert_eq!(bucket.occupied, 0b0000_1000);
 
-        let (result, tick_times, need_tick_next) = bucket.tick(4);
+        let (result, next_tick_times) = bucket.tick(4);
         let result = result.unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].data, 5);
-        assert_eq!(tick_times, 4);
-        assert_eq!(need_tick_next, false);
+        assert_eq!(next_tick_times, 0);
         assert_eq!(bucket.cursor, 5);
         assert_eq!(bucket.occupied, 0b0000_0000);
 
         bucket.add(content!(105), 5);
         assert_eq!(bucket.occupied, 0b0001_0000);
-        let (result, tick_times, need_tick_next) = bucket.tick(4);
+        let (result, next_tick_times) = bucket.tick(4);
         assert_eq!(result, None);
-        assert_eq!(tick_times, 4);
-        assert_eq!(need_tick_next, false);
+        assert_eq!(next_tick_times, 0);
         assert_eq!(bucket.cursor, 9);
         assert_eq!(bucket.occupied, 0b0000_0001);
 
-        let (result, tick_times, need_tick_next) = bucket.tick(4);
+        let (result, next_tick_times) = bucket.tick(4);
         let result = result.unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].data, 105);
-        assert_eq!(tick_times, 1);
-        assert_eq!(need_tick_next, false);
-        assert_eq!(bucket.cursor, 10);
+        assert_eq!(next_tick_times, 0);
+        assert_eq!(bucket.cursor, 13);
         assert_eq!(bucket.occupied, 0b0000_0000);
 
-        let (result, tick_times, need_tick_next) = bucket.tick(100);
+        let (result, next_tick_times) = bucket.tick(100);
         assert_eq!(result, None);
-        assert_eq!(tick_times, 54);
-        assert_eq!(need_tick_next, true);
-        assert_eq!(bucket.cursor, 0);
+        assert_eq!(next_tick_times, 1);
         assert_eq!(bucket.occupied, 0b0000_0000);
     }
 

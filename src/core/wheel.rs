@@ -45,23 +45,53 @@ impl<T: Debug> Wheel<T> {
     }
 
     #[timed]
-    pub(crate) fn tick(&mut self, times: u32) {
-        let (result, real_ticks, is_need_tick_next_level) = self.buckets[0].tick(times);
+    pub(crate) fn tick_to(&mut self, ticks: u64) {
+        if ticks <= self.ticks {
+            return;
+        }
 
-        self.ticks += real_ticks as u64;
+        let times = ticks - self.ticks;
+        self.ticks = ticks;
 
+        // tick first layer
+        let (result, next_level_tick_times) = self.buckets[0].tick(times as u32);
         if let Some(entities) = result {
             entities
                 .into_iter()
                 .for_each(|entity| (self.notice)(entity.data));
         }
 
-        if is_need_tick_next_level {
-            self.tick_next_level();
+        let mut next_level_ticks = next_level_tick_times;
+        let mut level = 1;
+        while next_level_ticks > 0 && level < LEVEL_COUNT {
+            let (result, next_level_tick_times) = self.buckets[level].tick(next_level_ticks);
+
+            if let Some(entities) = result {
+                for entity in entities {
+                    if entity.tick_times <= ticks as u64 {
+                        (self.notice)(entity.data);
+                    } else {
+                        // add to wheel again
+                        let offset = entity.tick_times - ticks;
+                        let level = to_level(offset);
+                        self.buckets[level.unwrap()].add(entity, offset);
+                    }
+                }
+            }
+            level += 1;
+            next_level_ticks = next_level_tick_times;
         }
 
-        if real_ticks < times {
-            self.tick(times - real_ticks)
+        // homeless
+        if level == LEVEL_COUNT - 1 && self.homeless.is_some() {
+            // tick to last level, rearrange homeless
+            let entities = self.homeless.take().unwrap();
+            for entity in entities {
+                // add to wheel again
+                let offset = entity.tick_times - self.ticks;
+                let level = to_level(offset);
+                self.buckets[level.unwrap()].add(entity, offset);
+            }
         }
     }
 
@@ -74,41 +104,6 @@ impl<T: Debug> Wheel<T> {
         }
 
         1.max(l0_non_stop_ticks)
-    }
-
-    fn tick_next_level(&mut self) {
-        for level in 1..LEVEL_COUNT {
-            let (result, _, is_need_tick_next_level) = self.buckets[level].tick(1);
-
-            if let Some(entities) = result {
-                for entity in entities {
-                    if entity.tick_times <= self.ticks as u64 {
-                        (self.notice)(entity.data);
-                    } else {
-                        // add to wheel again
-                        let offset = entity.tick_times - self.ticks;
-                        let level = to_level(offset);
-
-                        self.buckets[level.unwrap()].add(entity, offset);
-                    }
-                }
-            }
-
-            if level == LEVEL_COUNT - 1 && self.homeless.is_some() {
-                // tick to last level, rearrange homeless
-                let entities = self.homeless.take().unwrap();
-                for entity in entities {
-                    // add to wheel again
-                    let offset = entity.tick_times - self.ticks;
-                    let level = to_level(offset);
-                    self.buckets[level.unwrap()].add(entity, offset);
-                }
-            }
-
-            if !is_need_tick_next_level {
-                break;
-            }
-        }
     }
 }
 
@@ -152,7 +147,6 @@ fn _current_millis() -> u128 {
 mod tests {
     use super::*;
     use rand::Rng;
-    use std::sync::mpsc::channel;
 
     #[test]
     fn new_test_random() {

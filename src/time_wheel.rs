@@ -79,8 +79,10 @@ pub fn time_wheel<'a, T: Debug + Send + 'static>(
             let real_ticks = wheel.ticks as u128;
             let should_ticks = start_at.elapsed().as_nanos() / interval_in_nanos as u128;
 
+            let one_loop_start = Instant::now();
+
             if should_ticks > real_ticks {
-                wheel.tick((should_ticks - real_ticks) as u32);
+                wheel.tick_to(should_ticks as u64);
             }
 
             // resc
@@ -92,14 +94,21 @@ pub fn time_wheel<'a, T: Debug + Send + 'static>(
                 } else {
                     let offset = (when.duration_since(now).unwrap().as_nanos()
                         / interval_in_nanos as u128) as u64;
+
                     wheel.schedule(entity, offset)
                 }
             }
             mem::drop(entities);
 
             // park
-            let next_tick = interval_in_nanos * wheel.next_ticks() as u64;
-            thread::park_timeout(Duration::from_nanos(next_tick));
+            let next_ticks = wheel.next_ticks();
+
+            let next_tick = interval_in_nanos * next_ticks as u64;
+            let process_time = one_loop_start.elapsed().as_nanos() as u64;
+
+            if next_tick > process_time {
+                thread::park_timeout(Duration::from_nanos(next_tick - process_time));
+            }
         }
     });
 
