@@ -78,14 +78,17 @@ impl<T: Debug> Wheel<T> {
     }
 
     pub(crate) fn next_ticks(&self) -> u32 {
-        let l0_non_stop_ticks = self.buckets[0].non_stop_ticks();
-        if l0_non_stop_ticks == 64 {
-            let l1_non_stop_ticks = self.buckets[1].non_stop_ticks();
+        let mut next_ticks = 1;
 
-            return l0_non_stop_ticks.max(l1_non_stop_ticks);
+        for level in 0..4 {
+            let (non_stop_ticks, is_need_check_next) = self.buckets[level].non_stop_ticks();
+            next_ticks = next_ticks.max(non_stop_ticks);
+
+            if !is_need_check_next {
+                break;
+            }
         }
-
-        1.max(l0_non_stop_ticks)
+        next_ticks
     }
 
     fn dispose_of(&mut self, entities: Vec<Entity<T>>) {
