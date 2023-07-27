@@ -75,7 +75,7 @@ impl<T: Debug> Bucket<T> {
 
             while left_times > 0 && self.occupied > 0 {
                 let non_empty_index = self.occupied.trailing_zeros();
-                let tick_times = non_empty_index + 1;
+                let tick_times = left_times.min(non_empty_index + 1);
 
                 self.cursor = (self.cursor + tick_times) % SLOT_NUM;
                 if let Some(timeout_entities) = self.slots[self.cursor as usize].items.take() {
