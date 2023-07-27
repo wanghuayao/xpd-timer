@@ -74,14 +74,13 @@ pub fn time_wheel<'a, T: Debug + Send + 'static>(
 
         let start = Instant::now();
         let start_at = SystemTime::now();
-        thread::sleep(interval);
 
+        thread::sleep(interval);
         loop {
             let real_ticks = wheel.ticks as u128;
             let should_ticks = start.elapsed().as_nanos() / interval_in_nanos as u128;
 
             let one_loop_start = Instant::now();
-
             if should_ticks > real_ticks {
                 wheel.tick_to(should_ticks as u64);
             }
@@ -89,25 +88,17 @@ pub fn time_wheel<'a, T: Debug + Send + 'static>(
             // resc
             let mut entities = entities_send.lock().unwrap();
             while let Some((entity, when)) = entities.pop() {
-                if when > start_at {
-                    let offset = ((when.duration_since(start_at).unwrap().as_nanos()
-                        - start.elapsed().as_nanos())
-                        / interval_in_nanos as u128) as u64;
-
-                    wheel.schedule(entity, offset, when);
-                } else {
-                    notice_copy(entity);
+                if let Ok(time_offset) = when.duration_since(start_at) {
+                    if let Some(pure_time_offset) = time_offset.checked_sub(start.elapsed()) {
+                        let offset = pure_time_offset.as_nanos() / interval_in_nanos as u128;
+                        if offset > 0 {
+                            wheel.schedule(entity, offset as u64, when);
+                            continue;
+                        }
+                    }
                 }
 
-                // let now = SystemTime::now();
-                // if when < (now + interval) {
-                //     notice_copy(entity);
-                // } else {
-                //     let offset = (when.duration_since(now).unwrap().as_nanos()
-                //         / interval_in_nanos as u128) as u64;
-
-                //     wheel.schedule(entity, offset)
-                // }
+                notice_copy(entity);
             }
             mem::drop(entities);
 

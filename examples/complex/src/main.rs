@@ -14,7 +14,7 @@ struct Entity {
 
 // #[allow(unused)]
 fn main() -> TimerResult<()> {
-    const UNIT: u64 = 1000;
+    const UNIT: u64 = 512;
     let (scheduler, receiver) = time_wheel::<Entity>(Duration::from_micros(UNIT));
 
     const TASK_CONT: u64 = 500;
@@ -41,11 +41,11 @@ fn main() -> TimerResult<()> {
                 span: (millis * 1000) / UNIT,
             };
 
-            if rng.gen_range(100..=2000) % 2 == 0 {
-                scheduler.arrange(entity).at(when);
-            } else {
-                scheduler.arrange(entity).after(duration);
-            }
+            // if rng.gen_range(100..=2000) % 2 == 0 {
+            scheduler.arrange(entity).at(when);
+            // } else {
+            //     scheduler.arrange(entity).after(duration);
+            // }
 
             thread::sleep(Duration::from_millis(rng.gen_range(100..=2000)))
         }
@@ -85,7 +85,7 @@ fn main() -> TimerResult<()> {
             println!(
                 "{}\tbefore\t{} unit ({} micros), span:{}",
                 i,
-                dis / UNIT as u128,
+                dis / 1000 as u128,
                 dis,
                 span
             );

@@ -2,8 +2,13 @@ use super::slot::{Entity, Slot};
 use std::convert::TryInto;
 use std::fmt::Debug;
 
+/// power of 2 (2^6 = 64)
+pub(super) const SLOT_NUM_POWER_OF_2: u32 = 6;
+
 /// Number of slots in a bucket
-pub(super) const SLOT_NUM: u32 = 64;
+pub(super) const SLOT_NUM: u32 = 1 << SLOT_NUM_POWER_OF_2;
+
+const SLOT_NUM_MASK: u32 = SLOT_NUM - 1;
 
 #[derive(Debug)]
 pub(crate) struct Bucket<T> {
@@ -56,7 +61,7 @@ impl<T: Debug> Bucket<T> {
         // mark there has entity
         self.occupied |= 1 << (slot_index - 1);
 
-        let slot_index_from_cur = (slot_index + self.cursor) % SLOT_NUM;
+        let slot_index_from_cur = (slot_index + self.cursor) & SLOT_NUM_MASK;
 
         self.slots[slot_index_from_cur as usize].push(entity);
     }
@@ -65,38 +70,33 @@ impl<T: Debug> Bucket<T> {
     pub fn tick(&mut self, times: u32) -> (Option<Vec<Entity<T>>>, u32) {
         let mut entities = Option::<Vec<Entity<T>>>::None;
 
-        let next_level_tick_times = (times + self.cursor) / SLOT_NUM;
+        let next_level_tick_times = (times + self.cursor) >> SLOT_NUM_POWER_OF_2;
 
         // has some things
         let mut left_times = times;
 
         if self.occupied > 0 && times > self.occupied.trailing_zeros() {
-            let mut temp_entities = Vec::<Entity<T>>::new();
+            // this tick has some entities
+            let mut temp_entities = Vec::new();
 
             while left_times > 0 && self.occupied > 0 {
                 let non_empty_index = self.occupied.trailing_zeros();
-                let tick_times = left_times.min(non_empty_index + 1);
+                let ticks = left_times.min(non_empty_index + 1);
 
-                self.cursor = (self.cursor + tick_times) % SLOT_NUM;
+                self.cursor = (self.cursor + ticks) & SLOT_NUM_MASK;
+
                 if let Some(timeout_entities) = self.slots[self.cursor as usize].items.take() {
                     temp_entities.extend(timeout_entities);
                 }
-
-                left_times -= tick_times;
-                self.occupied = self.occupied >> tick_times;
+                left_times -= ticks;
+                self.occupied = self.occupied >> ticks;
             }
 
             entities = Some(temp_entities);
         }
-        self.occupied = if left_times >= SLOT_NUM {
-            0
-        } else {
-            self.occupied >> left_times
-        };
-        self.cursor = (self.cursor + left_times) % SLOT_NUM;
 
-        // let new_cursor = self.cursor + times;
-        // self.cursor = (new_cursor % SLOT_NUM) as u32;
+        self.occupied = self.occupied.checked_shr(left_times).unwrap_or(0);
+        self.cursor = (self.cursor + left_times) & SLOT_NUM_MASK;
 
         return (entities, next_level_tick_times);
     }

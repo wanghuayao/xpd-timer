@@ -31,6 +31,77 @@ impl<T: Debug> Wheel<T> {
         }
     }
 
+    #[timed]
+    pub(crate) fn schedule(&mut self, entity: T, offset: u64, when: SystemTime) {
+        let entity = Entity {
+            data: entity,
+            tick_times: offset + self.ticks,
+            when,
+            offset: offset,
+            ticks: self.ticks,
+        };
+
+        match to_level(offset) {
+            Some(level) => self.buckets[level].add(entity, offset as u64),
+            _ => self.homeless.get_or_insert_with(Vec::new).push(entity),
+        }
+    }
+
+    #[timed]
+    pub(crate) fn tick_to(&mut self, ticks: u64) {
+        if ticks <= self.ticks {
+            return;
+        }
+        let mut times = (ticks - self.ticks) as u32;
+
+        self.ticks = ticks;
+
+        const MAX_LEVEL_INDEX: usize = LEVEL_COUNT - 1;
+        let mut tick_to_max_level = false;
+
+        for level in 0..LEVEL_COUNT {
+            let (result, next_level_tick_times) = self.buckets[level].tick(times);
+            result.map(|entities| self.dispose_of(entities));
+            tick_to_max_level = level == MAX_LEVEL_INDEX;
+            if next_level_tick_times == 0 {
+                break;
+            }
+            // prepare next loop
+            times = next_level_tick_times;
+        }
+
+        if tick_to_max_level {
+            self.homeless
+                .take()
+                .map(|entities| self.dispose_of(entities));
+        }
+    }
+
+    pub(crate) fn next_ticks(&self) -> u32 {
+        let l0_non_stop_ticks = self.buckets[0].non_stop_ticks();
+        if l0_non_stop_ticks == 64 {
+            let l1_non_stop_ticks = self.buckets[1].non_stop_ticks();
+
+            return l0_non_stop_ticks.max(l1_non_stop_ticks);
+        }
+
+        1.max(l0_non_stop_ticks)
+    }
+
+    fn dispose_of(&mut self, entities: Vec<Entity<T>>) {
+        let ticks = self.ticks;
+        for entity in entities {
+            if entity.tick_times <= ticks as u64 {
+                self.notice(entity);
+            } else {
+                // add to wheel again
+                let offset = entity.tick_times - ticks;
+                let level = to_level(offset);
+                self.buckets[level.unwrap()].add(entity, offset);
+            }
+        }
+    }
+
     fn notice(&self, entity: Entity<T>) {
         let now = SystemTime::now();
         let when = entity.when;
@@ -50,88 +121,6 @@ impl<T: Debug> Wheel<T> {
         assert!(self.ticks >= entity.tick_times);
 
         (self._notice)(entity.data);
-    }
-
-    #[timed]
-    pub(crate) fn schedule(&mut self, entity: T, offset: u64, when: SystemTime) {
-        let entity = Entity {
-            data: entity,
-            tick_times: offset + self.ticks,
-            when,
-            offset: offset,
-            ticks: self.ticks,
-        };
-
-        match to_level(offset) {
-            Some(level) => self.buckets[level].add(entity, offset as u64),
-            _ => self.homeless.get_or_insert_with(Vec::new).push(entity),
-        }
-    }
-
-    #[timed]
-    pub(crate) fn tick_to(&mut self, ticks: u64) {
-        println!("tick_to:{}", ticks);
-
-        if ticks <= self.ticks {
-            return;
-        }
-
-        let times = ticks - self.ticks;
-        self.ticks = ticks;
-
-        // tick first layer
-        let (result, next_level_tick_times) = self.buckets[0].tick(times as u32);
-        if let Some(entities) = result {
-            entities.into_iter().for_each(
-                //                    |entity| (self.notice)(entity.data)
-                |entity| self.notice(entity),
-            );
-        }
-
-        let mut next_level_ticks = next_level_tick_times;
-        let mut level = 1;
-        while next_level_ticks > 0 && level < LEVEL_COUNT {
-            let (result, next_level_tick_times) = self.buckets[level].tick(next_level_ticks);
-
-            if let Some(entities) = result {
-                for entity in entities {
-                    if entity.tick_times <= ticks as u64 {
-                        // (self.notice)(entity.data);
-                        self.notice(entity);
-                    } else {
-                        // add to wheel again
-                        let offset = entity.tick_times - ticks;
-                        let level = to_level(offset);
-                        self.buckets[level.unwrap()].add(entity, offset);
-                    }
-                }
-            }
-            level += 1;
-            next_level_ticks = next_level_tick_times;
-        }
-
-        // homeless
-        if level == LEVEL_COUNT - 1 && self.homeless.is_some() {
-            // tick to last level, rearrange homeless
-            let entities = self.homeless.take().unwrap();
-            for entity in entities {
-                // add to wheel again
-                let offset = entity.tick_times - self.ticks;
-                let level = to_level(offset);
-                self.buckets[level.unwrap()].add(entity, offset);
-            }
-        }
-    }
-
-    pub(crate) fn next_ticks(&self) -> u32 {
-        let l0_non_stop_ticks = self.buckets[0].non_stop_ticks();
-        if l0_non_stop_ticks == 64 {
-            let l1_non_stop_ticks = self.buckets[1].non_stop_ticks();
-
-            return l0_non_stop_ticks.max(l1_non_stop_ticks);
-        }
-
-        1.max(l0_non_stop_ticks)
     }
 }
 
