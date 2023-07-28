@@ -41,13 +41,18 @@ fn main() -> TimerResult<()> {
                 span: (millis * 1000) / UNIT,
             };
 
-            // if rng.gen_range(100..=2000) % 2 == 0 {
-            scheduler.arrange(entity).at(when);
-            // } else {
-            //     scheduler.arrange(entity).after(duration);
-            // }
+            if rng.gen_range(100..=2000) % 2 == 0 {
+                scheduler.arrange(entity).at(when);
+            } else {
+                scheduler.arrange(entity).after(duration);
+            }
 
-            thread::sleep(Duration::from_millis(rng.gen_range(100..=2000)))
+            let max = if rng.gen_range(100..=2000) % 2 == 0 {
+                10000
+            } else {
+                1000
+            };
+            thread::sleep(Duration::from_millis(rng.gen_range(300..=max)));
         }
     });
 
@@ -65,9 +70,9 @@ fn main() -> TimerResult<()> {
             .as_micros();
 
         if when_in_micros == now {
-            // let dis = when_in_micros - now;
-            // total_dis += dis;
-            // println!("{}\tequal\t{} unit ({} micros)", i, dis / UNIT as u128, dis);
+            let dis = when_in_micros - now;
+            total_dis += dis;
+            println!("{}\tequal\t{} unit ({} micros)", i, dis / UNIT as u128, dis);
         } else if when_in_micros < now {
             let dis = now - when_in_micros;
             total_dis += dis;
