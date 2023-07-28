@@ -88,17 +88,19 @@ pub fn time_wheel<'a, T: Debug + Send + 'static>(
             // resc
             let mut entities = entities_send.lock().unwrap();
             while let Some((entity, when)) = entities.pop() {
-                if let Ok(time_offset) = when.duration_since(start_at) {
-                    if let Some(pure_time_offset) = time_offset.checked_sub(start.elapsed()) {
-                        let offset = pure_time_offset.as_nanos() / interval_in_nanos as u128;
-                        if offset > 0 {
-                            wheel.schedule(entity, offset as u64, when);
-                            continue;
-                        }
-                    }
-                }
+                let pure_time_offset = when
+                    .duration_since(start_at)
+                    .unwrap_or_default()
+                    .checked_sub(start.elapsed())
+                    .unwrap_or_default()
+                    .as_nanos();
 
-                notice_copy(entity);
+                if pure_time_offset > interval_in_nanos as u128 {
+                    let offset = pure_time_offset / interval_in_nanos as u128;
+                    wheel.schedule(entity, offset as u64, when);
+                } else {
+                    notice_copy(entity);
+                }
             }
             mem::drop(entities);
 
