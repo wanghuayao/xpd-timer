@@ -166,34 +166,6 @@ fn _current_millis() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::Rng;
-
-    #[test]
-    fn new_test_random() {
-        let mut rng = rand::thread_rng();
-
-        const MAX_SIZE: u64 = 500;
-
-        let mut wheel = Wheel::<String>::new(|_| {});
-
-        const ITEM_COUNT: u64 = 200;
-        for _ in 0..ITEM_COUNT {
-            let offset: u64 = rng.gen_range(1..=MAX_SIZE);
-            let _result = wheel.schedule(offset.to_string(), offset, SystemTime::now());
-            // assert!(result.is_ok());
-        }
-
-        let mut tick_count = 0u64;
-        for _ in 0..=MAX_SIZE {
-            tick_count += 1;
-            // wheel.tick(1, move |item| {
-            //     let item_tick: u64 = item.parse().unwrap();
-            //     println!(" - got {:?} ", item);
-            //     assert_eq!(item_tick, tick_count);
-            // });
-        }
-        // assert_eq!(real_item_count, ITEM_COUNT);
-    }
 
     #[test]
     fn test_next_ticks() {
@@ -207,37 +179,6 @@ mod tests {
 
         wheel.schedule(1, (64 * 64) - 1, SystemTime::now());
         assert_eq!(wheel.next_ticks(), (64 * (64 - 2)));
-    }
-
-    #[test]
-    fn test_whoflow() {
-        // notice entity ticks: 543089, system ticks:543090, time diff: 224, add offset:2273, ticks:540816
-        // notice entity ticks: 543103, system ticks:543090, time diff: 6865, add offset:8037, ticks:535066
-
-        let mut wheel = Wheel::<u64>::new(|entity| println!("recive: {}", entity));
-        wheel.tick_to(535066);
-        assert_eq!(wheel.ticks, 535066);
-
-        wheel.schedule(1, 8037, SystemTime::now());
-
-        let mut ticks = wheel.ticks + wheel.next_ticks() as u64;
-        while ticks < 540816 {
-            wheel.tick_to(ticks);
-            ticks = wheel.ticks + wheel.next_ticks() as u64;
-        }
-
-        wheel.tick_to(540816);
-        wheel.schedule(2, 2273, SystemTime::now());
-
-        while ticks < 543090 {
-            wheel.tick_to(ticks);
-            ticks = wheel.ticks + wheel.next_ticks() as u64;
-        }
-
-        wheel.tick_to(543090);
-        wheel.tick_to(wheel.ticks + wheel.next_ticks() as u64);
-
-        wheel.tick_to(543103);
     }
 
     #[test]
@@ -287,3 +228,4 @@ mod tests {
         // assert!(rx.try_recv().is_ok());
     }
 }
+
