@@ -8,7 +8,7 @@ A timer implementation based on [hierarchical timing wheels](http://www.cs.colum
 - [x] Ergonomic API
 - [ ] Visualization (eg. timer state)
 
-## Usage
+## Example
 ```rust
 use std::time::Duration;
 
@@ -22,10 +22,6 @@ fn main() {
     println!("{}", result);
 }
 ```
-
-## About hierarchical timing wheels
-- https://www.confluent.io/blog/apache-kafka-purgatory-hierarchical-timing-wheels/
-
 
 ## Licenses
 xpd-timer is licensed under the MIT license.
