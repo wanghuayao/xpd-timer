@@ -8,7 +8,6 @@ pub(super) const SLOT_NUM_POWER_OF_2: u32 = 6;
 /// Number of slots in a bucket
 pub(super) const SLOT_NUM: u32 = 1 << SLOT_NUM_POWER_OF_2;
 
-
 const SLOT_NUM_MASK: u32 = SLOT_NUM - 1;
 
 #[derive(Debug)]
@@ -30,7 +29,6 @@ pub(crate) struct Bucket<T> {
 impl<T: Debug> Bucket<T> {
     /// New bucket `level` is from 0.
     pub fn new(level: u32) -> Self {
-
         let step_size_in_bits = SLOT_NUM_POWER_OF_2 * level;
 
         let slots = (0..SLOT_NUM)
